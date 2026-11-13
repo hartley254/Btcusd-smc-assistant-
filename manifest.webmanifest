@@ -1,0 +1,9 @@
+{
+  "name": "BTCUSD SMC Assistant",
+  "short_name": "BTCUSD SMC",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b1118",
+  "theme_color": "#101820",
+  "description": "Independent BTC-USD market monitor and SMC alert app."
+}

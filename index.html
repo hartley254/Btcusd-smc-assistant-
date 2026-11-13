@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101820">
+<link rel="manifest" href="manifest.webmanifest">
+<title>BTCUSD SMC Assistant</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1118;--panel:#131e29;--line:#263646;--muted:#91a2b4;--text:#edf4fa;--green:#31c48d;--red:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,sans-serif}
+header{padding:20px 16px 12px;background:#101820;border-bottom:1px solid var(--line)}h1{font-size:20px;margin:0 0 5px}header p{margin:0;color:var(--muted);font-size:12px}
+main{max-width:760px;margin:auto;padding:14px;display:grid;gap:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px}
+.price{font-size:32px;font-weight:750}.muted{color:var(--muted)}.row{display:flex;justify-content:space-between;align-items:center;gap:12px}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:14px}.stat small{display:block;color:var(--muted);font-size:11px}.stat strong{font-size:15px}
+button,select{background:#203244;color:var(--text);border:1px solid #38516a;border-radius:9px;padding:10px 12px;font:inherit}canvas{width:100%;height:190px;display:block;margin-top:10px}.notice{font-size:12px;line-height:1.5;color:var(--muted)}.pill{font-size:11px;padding:4px 8px;border-radius:20px;background:#263646}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:10px 20px 28px}
+</style>
+</head>
+<body>
+<header><h1>BTCUSD SMC Assistant</h1><p>Independent market monitor · Coinbase BTC-USD public data</p></header>
+<main>
+<section class="card">
+  <div class="row"><span class="muted">BTC / USD</span><span class="pill" id="connection">Connecting…</span></div>
+  <div class="price" id="price">—</div><div id="change" class="muted">Loading market data</div>
+  <div class="stats">
+    <div class="stat"><small>24H HIGH</small><strong id="high">—</strong></div>
+    <div class="stat"><small>24H LOW</small><strong id="low">—</strong></div>
+    <div class="stat"><small>24H VOLUME</small><strong id="volume">—</strong></div>
+    <div class="stat"><small>LAST UPDATED</small><strong id="updated">—</strong></div>
+  </div>
+</section>
+<section class="card">
+  <div class="row"><strong>Price chart</strong>
+    <select id="tf">
+      <option value="60">1 minute</option><option value="300" selected>5 minutes</option>
+      <option value="900">15 minutes</option><option value="3600">1 hour</option>
+      <option value="21600">4 hours</option>
+    </select>
+  </div>
+  <canvas id="chart" width="700" height="240"></canvas>
+  <p class="notice">Coinbase BTC-USD spot data may differ from a broker's BTCUSD CFD price.</p>
+</section>
+<section class="card">
+  <div class="row"><strong>SMC alert engine</strong><span class="pill">In development</span></div>
+  <p class="notice">No buy/sell signals are generated yet. Next we will implement measurable H4 bias, H1 structure, M15 liquidity sweeps and M5 confirmation rules, then test them against historical data.</p>
+  <button id="notify">Enable browser notifications</button>
+  <p class="notice" id="notifyStatus">Browser notifications may not arrive when the app is closed.</p>
+</section>
+</main>
+<footer>Educational market monitor · No trade execution · No MT5 or prop-firm connection</footer>
+<script>
+const $=id=>document.getElementById(id);
+const fmt=n=>Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+let candles=[];
+async function ticker(){
+  try{
+    const d=await fetch('https://api.exchange.coinbase.com/products/BTC-USD/stats').then(r=>{if(!r.ok)throw Error(r.status);return r.json()});
+    const t=await fetch('https://api.exchange.coinbase.com/products/BTC-USD/ticker').then(r=>r.json());
+    $('price').textContent='$'+fmt(t.price);
+    const p=(Number(d.last)/Number(d.open)-1)*100;
+    $('change').textContent=(p>=0?'+':'')+p.toFixed(2)+'% over 24h';
+    $('change').style.color=p>=0?'var(--green)':'var(--red)';
+    $('high').textContent='$'+fmt(d.high);$('low').textContent='$'+fmt(d.low);
+    $('volume').textContent=Number(d.volume).toLocaleString()+' BTC';
+    $('updated').textContent=new Date().toLocaleTimeString();$('connection').textContent='Live feed';
+  }catch(e){$('connection').textContent='Feed unavailable'}
+}
+async function chart(){
+  try{
+    const g=Number($('tf').value),end=new Date(),start=new Date(end.getTime()-g*160*1000);
+    const u='https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity='+g+'&start='+encodeURIComponent(start.toISOString())+'&end='+encodeURIComponent(end.toISOString());
+    candles=(await fetch(u).then(r=>r.json())).reverse();draw();
+  }catch(e){}
+}
+function draw(){
+  const c=$('chart'),x=c.getContext('2d'),w=c.width,h=c.height;x.clearRect(0,0,w,h);
+  if(!candles.length)return;
+  const lo=Math.min(...candles.map(v=>v[3])),hi=Math.max(...candles.map(v=>v[2])),pad=12,range=hi-lo||1;
+  x.strokeStyle='#263646';
+  for(let i=0;i<5;i++){const y=pad+i*(h-2*pad)/4;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}
+  const step=(w-20)/candles.length;
+  candles.forEach((v,i)=>{
+    const [time,l,high,o,cl]=v,yy=p=>h-pad-(p-lo)/range*(h-2*pad),up=cl>=o,cx=10+i*step+step/2;
+    x.strokeStyle=up?'#31c48d':'#ff6b6b';x.fillStyle=x.strokeStyle;
+    x.beginPath();x.moveTo(cx,yy(high));x.lineTo(cx,yy(l));x.stroke();
+    x.fillRect(cx-Math.max(1,step*.28),yy(Math.max(o,cl)),Math.max(2,step*.56),Math.max(1,yy(Math.min(o,cl))-yy(Math.max(o,cl))));
+  });
+}
+$('tf').onchange=chart;
+$('notify').onclick=async()=>{
+  if(!('Notification'in window)){$('notifyStatus').textContent='Notifications are unsupported in this browser.';return}
+  const p=await Notification.requestPermission();
+  $('notifyStatus').textContent=p==='granted'?'Permission granted. SMC alerts will be added after the signal engine is built.':'Permission not granted.';
+};
+ticker();chart();setInterval(ticker,60000);setInterval(chart,60000);
+if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+</script>
+</body>
+</html>
