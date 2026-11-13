@@ -124,13 +124,56 @@ function renderFrame(prefix,a){
 }
 
 function renderAlerts(analyses){
- const all=analyses.flatMap(a=>a.setups.map(s=>({...s,timeframe:a.tf,bars:a.bars}))).sort((a,b)=>b.retestTime-a.retestTime);
- const fresh=all.filter(s=>s.retestIndex>=s.bars.length-2);
+ const triggered=analyses.flatMap(a=>a.setups);
+ const fresh=triggered.filter(s=>s.retestIndex>=s.bars.length-2);
  fresh.forEach(notifySetup);
- $('engineStatus').textContent=fresh.length?'Retest alert · '+fresh.length:'Monitoring';
- $('alertList').innerHTML=all.length
-  ?all.slice(-8).reverse().map(s=>'<div class="zone alert"><strong class="'+(s.direction==='BULLISH'?'good':'bad')+'">'+s.direction+' '+s.timeframe+' OB RETEST</strong><br>Liquidity cleared: '+s.clear.type+' '+s.clear.method+' at '+money(s.clear.level)+' · '+timeOf(s.clear.time)+'<br>OB: '+money(s.obLow)+' – '+money(s.obHigh)+' · Retest: '+timeOf(s.retestTime)+'<br>FVG support: '+money(s.fvgLow)+' – '+money(s.fvgHigh)+'<br>Next liquidity target: <strong class="gold">'+money(s.target?.level)+'</strong> · '+(s.closeInside?'Close inside OB':'Wick touched OB')+'</div>').join('')
-  :'<div class="empty">No confirmed sequence of liquidity clearance followed by a later OB retest in the latest loaded candles.</div>';
+
+ const active=analyses.flatMap(a=>{
+  const price=a.bars.at(-1)?.[4]||0;
+
+  const done=new Set(
+   a.setups.map(s=>[a.tf,s.direction,s.createdAt].join(':'))
+  );
+
+  const eligible=a.zones.filter(z=>
+   !done.has([a.tf,z.direction,z.createdAt].join(':'))
+  );
+
+  const upper=eligible
+   .filter(z=>z.obLow>price)
+   .sort((x,y)=>x.obLow-y.obLow)[0];
+
+  const lower=eligible
+   .filter(z=>z.obHigh<price)
+   .sort((x,y)=>y.obHigh-x.obHigh)[0];
+
+  return [
+   ...(upper?[{...upper,tf:a.tf,side:'ABOVE'}]:[]),
+   ...(lower?[{...lower,tf:a.tf,side:'BELOW'}]:[])
+  ];
+ });
+
+ $('engineStatus').textContent=
+  fresh.length?'New retest · '+fresh.length:
+  'Monitoring · '+active.length+'/6 OB alerts';
+
+ $('alertList').innerHTML=active.length?active.map(z=>{
+  const a=analyses.find(v=>v.tf===z.tf);
+  const clear=clearedLiquidity(
+   a.bars,a.pools,z.createdIndex,z.direction
+  );
+
+  const state=clear?
+   'Liquidity cleared · waiting for OB retest':
+   'Waiting for liquidity clearance';
+
+  return '<div class="zone alert"><strong class="'+
+   (z.direction==='BULLISH'?'good':'bad')+'">'+
+   z.tf+' · '+z.side+' · '+z.direction+
+   ' OB</strong><br>OB: '+money(z.obLow)+' – '+money(z.obHigh)+
+   '<br>FVG support: '+money(z.fvgLow)+' – '+money(z.fvgHigh)+
+   '<br><span class="gold">'+state+'</span></div>';
+ }).join(''):'<div class="empty">No eligible untriggered OBs currently sit above or below price.</div>';
  }
 function notifySetup(s){if(!alertKeys.has(s.key)){alertKeys.add(s.key);saveAlertKeys();if('Notification'in window&&Notification.permission==='granted'){try{new Notification('BTC SMC '+s.direction+' retest',{body:s.timeframe+' OB retest after '+s.clear.type+' '+s.clear.method+'. Target: '+money(s.target?.level)+'.'})}catch(e){}}}}
  
