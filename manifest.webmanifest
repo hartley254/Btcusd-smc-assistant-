@@ -1,6 +1,6 @@
 {
-  "name": "BTCUSD SMC Assistant",
-  "short_name": "BTCUSD SMC",
+  "name": "BTC Hartley SMC",
+  "short_name": "BTCUSD Hartley SMC",
   "id": "./",
   "start_url": "./",
   "scope": "./",
