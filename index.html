@@ -13,6 +13,7 @@ header{padding:20px 16px 12px;background:#101820;border-bottom:1px solid var(--l
 main{max-width:760px;margin:auto;padding:14px;display:grid;gap:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px}
 .price{font-size:32px;font-weight:750}.muted{color:var(--muted)}.row{display:flex;justify-content:space-between;align-items:center;gap:12px}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:14px}.stat small{display:block;color:var(--muted);font-size:11px}.stat strong{font-size:15px}
 button,select{background:#203244;color:var(--text);border:1px solid #38516a;border-radius:9px;padding:10px 12px;font:inherit}canvas{width:100%;height:190px;display:block;margin-top:10px}.notice{font-size:12px;line-height:1.5;color:var(--muted)}.pill{font-size:11px;padding:4px 8px;border-radius:20px;background:#263646}
+.bias{font-size:21px;font-weight:750;margin:11px 0 5px}.bull{color:var(--green)}.bear{color:var(--red)}
 footer{text-align:center;color:var(--muted);font-size:11px;padding:10px 20px 28px}
 </style>
 </head>
@@ -20,167 +21,99 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:10px 20px 28p
 <header><h1>BTCUSD SMC Assistant</h1><p>Independent market monitor · Coinbase BTC-USD public data</p></header>
 <main>
 <section class="card">
-  <div class="row"><span class="muted">BTC / USD</span><span class="pill" id="connection">Connecting…</span></div>
-  <div class="price" id="price">—</div><div id="change" class="muted">Loading market data</div>
-  <div class="stats">
-    <div class="stat"><small>24H HIGH</small><strong id="high">—</strong></div>
-    <div class="stat"><small>24H LOW</small><strong id="low">—</strong></div>
-    <div class="stat"><small>24H VOLUME</small><strong id="volume">—</strong></div>
-    <div class="stat"><small>LAST UPDATED</small><strong id="updated">—</strong></div>
-  </div>
-</section>
-<section class="card">
-  <div class="row"><strong>Price chart</strong>
-    <select id="tf">
-      <option value="60">1 minute</option><option value="300" selected>5 minutes</option>
-      <option value="900">15 minutes</option><option value="3600">1 hour</option>
-      <option value="14400">4 hours</option>
-    </select>
-  </div>
-  <canvas id="chart" width="700" height="240"></canvas>
-  <p class="notice">Coinbase BTC-USD spot data may differ from a broker's BTCUSD CFD price.</p>
-</section>
-<section class="card" id="h4Card">
-  <div class="row"><strong>H4 market bias</strong><span class="pill" id="h4Status">Checking…</span></div>
-  <div id="h4Bias" style="font-size:22px;font-weight:750;margin:12px 0 6px">Waiting for H4 data</div>
-  <p class="notice" id="h4Detail">Checking confirmed swing sweeps and displacement on completed 4-hour candles.</p>
-  <div class="row"><span class="notice" id="h4Updated">—</span><button id="h4Refresh">Refresh H4</button></div>
-  <p class="notice">Experimental rules-based detection. This is a market-bias study, not an entry signal or financial advice.</p>
-</section>
-<section class="card">
-  <div class="row"><strong>SMC alert engine</strong><span class="pill">In development</span></div>
-  <p class="notice">H4 bias detection is the first experimental module. H1 structure, M15 liquidity sweeps, M5 confirmation and order-block execution alerts are not implemented yet.</p>
-  <button id="notify">Enable browser notifications</button>
-  <p class="notice" id="notifyStatus">Browser notifications may not arrive when the app is closed.</p>
-</section>
-</main>
+<div class="row"><span class="muted">BTC / USD</span><span class="pill" id="connection">Connecting…</span></div>
+<div class="price" id="price">—</div><div id="change" class="muted">Loading market data</div>
+<div class="stats">
+<div class="stat"><small>24H HIGH</small><strong id="high">—</strong></div><div class="stat"><small>24H LOW</small><strong id="low">—</strong></div>
+<div class="stat"><small>24H VOLUME</small><strong id="volume">—</strong></div><div class="stat"><small>LAST UPDATED</small><strong id="updated">—</strong></div>
+</div></section>
+<section class="card"><div class="row"><strong>Price chart</strong><select id="tf">
+<option value="60">1 minute</option><option value="300" selected>5 minutes</option><option value="900">15 minutes</option><option value="3600">1 hour</option><option value="14400">4 hours</option>
+</select></div><canvas id="chart" width="700" height="240"></canvas><p class="notice">Coinbase BTC-USD spot data may differ from your broker's BTCUSD CFD price.</p></section>
+<section class="card"><div class="row"><strong>H4 market bias & liquidity</strong><span class="pill" id="h4Status">Checking…</span></div><div class="bias" id="h4Bias">Loading H4</div><p class="notice" id="h4Detail">Assessing H4 structure and external liquidity.</p></section>
+<section class="card"><div class="row"><strong>H1 structure & liquidity</strong><span class="pill" id="h1Status">Checking…</span></div><div class="bias" id="h1Bias">Loading H1</div><p class="notice" id="h1Detail">Assessing H1 structure and liquidity.</p></section>
+<section class="card"><div class="row"><strong>M15 liquidity map</strong><span class="pill" id="m15Status">Checking…</span></div><div class="bias" id="m15Bias">Loading M15</div><p class="notice" id="m15Detail">Assessing M15 structure and nearby liquidity.</p></section>
+<section class="card"><div class="row"><strong>SMC alert engine</strong><span class="pill">In development</span></div>
+<p class="notice">This version provides experimental structure and liquidity context only. M15 sweep validation, M5 confirmation, order-block entries and actual browser alerts are not implemented yet. It does not execute trades.</p>
+<button id="refresh">Refresh analysis</button><p class="notice" id="updatedAnalysis">—</p>
+<button id="notify">Enable browser notifications</button><p class="notice" id="notifyStatus">Permission alone does not mean trading alerts are active.</p>
+</section></main>
 <footer>Educational market monitor · No trade execution · No MT5 or prop-firm connection</footer>
 <script>
-const $=id=>document.getElementById(id);
-const fmt=n=>Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const $=id=>document.getElementById(id),fmt=n=>Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 let candles=[];
-async function ticker(){
-  try{
-    const d=await fetch('https://api.exchange.coinbase.com/products/BTC-USD/stats').then(r=>{if(!r.ok)throw Error(r.status);return r.json()});
-    const t=await fetch('https://api.exchange.coinbase.com/products/BTC-USD/ticker').then(r=>r.json());
-    $('price').textContent='$'+fmt(t.price);
-    const p=(Number(d.last)/Number(d.open)-1)*100;
-    $('change').textContent=(p>=0?'+':'')+p.toFixed(2)+'% over 24h';
-    $('change').style.color=p>=0?'var(--green)':'var(--red)';
-    $('high').textContent='$'+fmt(d.high);$('low').textContent='$'+fmt(d.low);
-    $('volume').textContent=Number(d.volume).toLocaleString()+' BTC';
-    $('updated').textContent=new Date().toLocaleTimeString();$('connection').textContent='Live feed';
-  }catch(e){$('connection').textContent='Feed unavailable'}
-}
-function aggregateFourHour(raw){
-  const sorted=raw.slice().sort((a,b)=>a[0]-b[0]),groups=new Map(),now=Math.floor(Date.now()/1000);
-  for(const v of sorted){
-    const bucket=Math.floor(v[0]/14400)*14400;
-    if(bucket+14400>now)continue;
-    if(!groups.has(bucket))groups.set(bucket,[bucket,v[1],v[2],v[3],v[4],v[5]||0]);
-    else{
-      const g=groups.get(bucket);g[1]=Math.min(g[1],v[1]);g[2]=Math.max(g[2],v[2]);g[4]=v[4];g[5]+=(v[5]||0);
-    }
+async function ticker(){try{
+ const d=await fetch('https://api.exchange.coinbase.com/products/BTC-USD/stats').then(r=>{if(!r.ok)throw Error();return r.json()});
+ const t=await fetch('https://api.exchange.coinbase.com/products/BTC-USD/ticker').then(r=>r.json());
+ $('price').textContent='$'+fmt(t.price);const p=(Number(d.last)/Number(d.open)-1)*100;
+ $('change').textContent=(p>=0?'+':'')+p.toFixed(2)+'% over 24h';$('change').style.color=p>=0?'var(--green)':'var(--red)';
+ $('high').textContent='$'+fmt(d.high);$('low').textContent='$'+fmt(d.low);$('volume').textContent=Number(d.volume).toLocaleString()+' BTC';
+ $('updated').textContent=new Date().toLocaleTimeString();$('connection').textContent='Live feed';
+}catch(e){$('connection').textContent='Feed unavailable'}}
+function aggregate4h(raw){const m=new Map(),now=Math.floor(Date.now()/1000);raw.slice().sort((a,b)=>a[0]-b[0]).forEach(v=>{
+ const t=Math.floor(v[0]/14400)*14400;if(t+14400>now)return;
+ if(!m.has(t))m.set(t,[t,v[1],v[2],v[3],v[4],v[5]||0]);else{const b=m.get(t);b[1]=Math.min(b[1],v[1]);b[2]=Math.max(b[2],v[2]);b[4]=v[4];b[5]+=(v[5]||0)}
+});return [...m.values()].sort((a,b)=>a[0]-b[0])}
+async function getCandles(g,count=160){
+ const end=new Date(),sec=g===14400?3600:g,start=new Date(end.getTime()-sec*count*1000),api=g===14400?3600:g;
+ const u='https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity='+api+'&start='+encodeURIComponent(start.toISOString())+'&end='+encodeURIComponent(end.toISOString());
+ const raw=await fetch(u).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()});
+ return g===14400?aggregate4h(raw):raw.slice().sort((a,b)=>a[0]-b[0])}
+async function chart(){try{const g=Number($('tf').value);candles=await getCandles(g,160);draw()}catch(e){}}
+function draw(){const c=$('chart'),x=c.getContext('2d'),w=c.width,h=c.height;x.clearRect(0,0,w,h);if(!candles.length)return;
+ const lo=Math.min(...candles.map(v=>v[1])),hi=Math.max(...candles.map(v=>v[2])),pad=12,range=hi-lo||1;x.strokeStyle='#263646';
+ for(let i=0;i<5;i++){const y=pad+i*(h-2*pad)/4;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}
+ const step=(w-20)/candles.length;candles.forEach((v,i)=>{const [t,l,high,o,cl]=v,yy=p=>h-pad-(p-lo)/range*(h-2*pad),up=cl>=o,cx=10+i*step+step/2;
+ x.strokeStyle=up?'#31c48d':'#ff6b6b';x.fillStyle=x.strokeStyle;x.beginPath();x.moveTo(cx,yy(high));x.lineTo(cx,yy(l));x.stroke();
+ x.fillRect(cx-Math.max(1,step*.28),yy(Math.max(o,cl)),Math.max(2,step*.56),Math.max(1,yy(Math.min(o,cl))-yy(Math.max(o,cl))))})}
+function atr(bars,i){if(i<14)return null;let s=0;for(let k=i-13;k<=i;k++){const b=bars[k],p=bars[k-1];s+=Math.max(b[2]-b[1],Math.abs(b[2]-p[4]),Math.abs(b[1]-p[4]))}return s/14}
+function pivots(bars){const out=[];for(let i=2;i<bars.length-2;i++){let hi=true,lo=true;for(let k=i-2;k<=i+2;k++){if(k===i)continue;if(bars[k][2]>=bars[i][2])hi=false;if(bars[k][1]<=bars[i][1])lo=false}
+ if(hi)out.push({type:'high',i,level:bars[i][2]});if(lo)out.push({type:'low',i,level:bars[i][1]})}return out}
+function structure(bars){const ps=pivots(bars),hs=ps.filter(p=>p.type==='high'),ls=ps.filter(p=>p.type==='low');let bias='NEUTRAL',why='Structure is mixed or not yet clear.';
+ if(hs.length>=2&&ls.length>=2){const h1=hs.at(-2),h2=hs.at(-1),l1=ls.at(-2),l2=ls.at(-1);
+ if(h2.level>h1.level&&l2.level>l1.level){bias='BULLISH';why='Higher high + higher low structure.'}
+ else if(h2.level<h1.level&&l2.level<l1.level){bias='BEARISH';why='Lower high + lower low structure.'}}
+ const last=bars.at(-1),lh=hs.at(-1),ll=ls.at(-1);let event='No fresh structure break';
+ if(lh&&last[4]>lh.level){event=bias==='BEARISH'?'Bullish CHOCH':'Bullish BOS';bias='BULLISH';why='Latest completed candle closed above the last confirmed swing high.'}
+ else if(ll&&last[4]<ll.level){event=bias==='BULLISH'?'Bearish CHOCH':'Bearish BOS';bias='BEARISH';why='Latest completed candle closed below the last confirmed swing low.'}
+ return {bias,why,event,ps,hs,ls}}
+function liquidity(bars,s){const price=bars.at(-1)[4],a=atr(bars,bars.length-1)||price*.001,tol=Math.max(price*.0005,a*.15);
+ function pool(points,type){const eligible=points.filter(p=>type==='BSL'?p.level>price:p.level<price).sort((x,y)=>x.level-y.level),groups=[];
+ eligible.forEach(p=>{let g=groups.find(z=>Math.abs(z.mean-p.level)<=tol);if(!g)groups.push(g={levels:[],mean:p.level});g.levels.push(p.level);g.mean=g.levels.reduce((v,n)=>v+n,0)/g.levels.length});
+ return groups.map(g=>({type,level:g.mean,count:g.levels.length,distance:Math.abs(g.mean-price)})).sort((x,y)=>x.distance-y.distance)}
+ const b=pool(s.hs,'BSL'),ss=pool(s.ls,'SSL'),preferred=s.bias==='BULLISH'?b[0]:s.bias==='BEARISH'?ss[0]:null;
+ return {price,buy:b[0],sell:ss[0],preferred,alternative:s.bias==='BULLISH'?ss[0]:s.bias==='BEARISH'?b[0]:(b[0]||ss[0])}}
+function describePool(p,price){if(!p)return 'not identified in available candles';return p.type+' $'+fmt(p.level)+' ('+(Math.abs(p.level-price)/price*100).toFixed(2)+'% away)'+(p.count>1?' · '+p.count+' clustered swing points':'')}
+function sweepEvidence(bars,s){
+ const recentStart=Math.max(0,bars.length-14);let found=null;
+ for(const pivot of s.ps){
+  if(pivot.i<recentStart-4||pivot.i>bars.length-5)continue;
+  for(let i=Math.max(pivot.i+3,recentStart);i<bars.length-1;i++){
+   const b=bars[i],av=atr(bars,i);if(!av)continue;const pad=Math.max(pivot.level*.0002,av*.05);
+   const bull=pivot.type==='low'&&b[1]<pivot.level-pad&&b[4]>pivot.level;
+   const bear=pivot.type==='high'&&b[2]>pivot.level+pad&&b[4]<pivot.level;
+   if(!bull&&!bear)continue;
+   for(let j=i+1;j<=Math.min(i+3,bars.length-1);j++){
+    const d=bars[j],da=atr(bars,j);if(!da)continue;const range=d[2]-d[1],body=Math.abs(d[4]-d[3]);if(range<=0)continue;
+    const strong=body>=1.2*da&&body/range>=.60&&(bull?d[4]>d[3]&&d[4]>=d[1]+range*.75:d[4]<d[3]&&d[4]<=d[1]+range*.25);
+    if(strong&&(!found||j>found.index))found={direction:bull?'BULLISH':'BEARISH',index:j,level:pivot.level};
+   }
   }
-  return [...groups.values()].sort((a,b)=>a[0]-b[0]);
+ }
+ return found;
 }
-async function getCandles(granularity,count=160){
-  const end=new Date(),seconds=granularity===14400?3600:granularity,start=new Date(end.getTime()-seconds*count*1000);
-  const apiGranularity=granularity===14400?3600:granularity;
-  const u='https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity='+apiGranularity+'&start='+encodeURIComponent(start.toISOString())+'&end='+encodeURIComponent(end.toISOString());
-  const raw=await fetch(u).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()});
-  return granularity===14400?aggregateFourHour(raw):raw.slice().sort((a,b)=>a[0]-b[0]);
-}
-async function chart(){
-  try{const g=Number($('tf').value);candles=await getCandles(g,g===14400?300:160);draw()}catch(e){}
-}
-function draw(){
-  const c=$('chart'),x=c.getContext('2d'),w=c.width,h=c.height;x.clearRect(0,0,w,h);
-  if(!candles.length)return;
-  const lo=Math.min(...candles.map(v=>v[1])),hi=Math.max(...candles.map(v=>v[2])),pad=12,range=hi-lo||1;
-  x.strokeStyle='#263646';
-  for(let i=0;i<5;i++){const y=pad+i*(h-2*pad)/4;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}
-  const step=(w-20)/candles.length;
-  candles.forEach((v,i)=>{
-    const [time,l,high,o,cl]=v,yy=p=>h-pad-(p-lo)/range*(h-2*pad),up=cl>=o,cx=10+i*step+step/2;
-    x.strokeStyle=up?'#31c48d':'#ff6b6b';x.fillStyle=x.strokeStyle;
-    x.beginPath();x.moveTo(cx,yy(high));x.lineTo(cx,yy(l));x.stroke();
-    x.fillRect(cx-Math.max(1,step*.28),yy(Math.max(o,cl)),Math.max(2,step*.56),Math.max(1,yy(Math.min(o,cl))-yy(Math.max(o,cl))));
-  });
-}
-function atrBefore(bars,index){
-  if(index<15)return null;
-  let total=0;
-  for(let k=index-14;k<index;k++){
-    const b=bars[k],prev=bars[k-1];
-    total+=Math.max(b[2]-b[1],Math.abs(b[2]-prev[4]),Math.abs(b[1]-prev[4]));
-  }
-  return total/14;
-}
-function findH4Bias(bars){
-  if(bars.length<25)return {bias:'INSUFFICIENT DATA',reason:'At least 25 completed H4 candles are needed.'};
-  const pivots=[];
-  for(let i=2;i<bars.length-2;i++){
-    const b=bars[i];let sh=true,sl=true;
-    for(let k=i-2;k<=i+2;k++){if(k===i)continue;if(bars[k][2]>=b[2])sh=false;if(bars[k][1]<=b[1])sl=false}
-    if(sh)pivots.push({type:'high',index:i,level:b[2]});
-    if(sl)pivots.push({type:'low',index:i,level:b[1]});
-  }
-  const candidates=[];
-  for(const p of pivots){
-    for(let i=p.index+3;i<Math.min(bars.length-1,p.index+31);i++){
-      const b=bars[i],atr=atrBefore(bars,i);if(!atr)continue;
-      const threshold=Math.max(p.level*0.0002,atr*0.05);
-      const bullish=p.type==='low'&&b[1]<=p.level-threshold&&b[4]>p.level;
-      const bearish=p.type==='high'&&b[2]>=p.level+threshold&&b[4]<p.level;
-      if(!bullish&&!bearish)continue;
-      for(let j=i+1;j<=Math.min(i+3,bars.length-1);j++){
-        const d=bars[j],a=atrBefore(bars,j);if(!a)continue;
-        const range=d[2]-d[1],body=Math.abs(d[4]-d[3]);if(range<=0)continue;
-        const bodyRatio=body/range;
-        const prevHigh=Math.max(bars[j-1][2],bars[j-2][2],bars[j-3][2]);
-        const prevLow=Math.min(bars[j-1][1],bars[j-2][1],bars[j-3][1]);
-        const bull=p.type==='low'&&d[4]>d[3]&&body>=1.2*a&&bodyRatio>=0.60&&d[4]>=d[1]+range*0.75&&d[4]>prevHigh;
-        const bear=p.type==='high'&&d[4]<d[3]&&body>=1.2*a&&bodyRatio>=0.60&&d[4]<=d[1]+range*0.25&&d[4]<prevLow;
-        if((bullish&&bull)||(bearish&&bear)){
-          candidates.push({bias:bull?'BULLISH':'BEARISH',pivot:p,sweepIndex:i,displacementIndex:j,sweepExtreme:bull?b[1]:b[2],displacementClose:d[4]});break;
-        }
-      }
-      if(candidates.some(c=>c.sweepIndex===i&&c.pivot.index===p.index))break;
-    }
-  }
-  candidates.sort((a,b)=>b.displacementIndex-a.displacementIndex);
-  for(const c of candidates){
-    let invalidated=false;
-    for(let k=c.displacementIndex+1;k<bars.length;k++){
-      if(c.bias==='BULLISH'&&bars[k][4]<c.sweepExtreme)invalidated=true;
-      if(c.bias==='BEARISH'&&bars[k][4]>c.sweepExtreme)invalidated=true;
-    }
-    const age=bars.length-1-c.displacementIndex;
-    if(!invalidated&&age<=20)return {...c,age,pivotLevel:c.pivot.level};
-  }
-  return {bias:'NEUTRAL',reason:candidates.length?'Latest qualifying setup was invalidated or is older than 20 H4 candles.':'No qualifying sweep followed by displacement was found in the available candles.'};
-}
-async function refreshH4(){
-  const status=$('h4Status'),bias=$('h4Bias'),detail=$('h4Detail');
-  status.textContent='Checking…';bias.textContent='Analysing completed candles…';
-  try{
-    const bars=await getCandles(14400,300),r=findH4Bias(bars);
-    if(r.bias==='BULLISH'||r.bias==='BEARISH'){
-      status.textContent='Signal found';bias.textContent=r.bias+' H4 BIAS';bias.style.color=r.bias==='BULLISH'?'var(--green)':'var(--red)';
-      detail.textContent='Swing level: $'+fmt(r.pivotLevel)+' · Sweep extreme: $'+fmt(r.sweepExtreme)+' · Displacement close: $'+fmt(r.displacementClose)+' · Signal age: '+r.age+' H4 candles.';
-    }else{status.textContent='No active bias';bias.textContent=r.bias;bias.style.color='var(--text)';detail.textContent=r.reason}
-    $('h4Updated').textContent='Updated '+new Date().toLocaleTimeString()+' · '+bars.length+' completed H4 candles';
-  }catch(e){status.textContent='Feed unavailable';bias.textContent='H4 data unavailable';bias.style.color='var(--text)';detail.textContent='Could not retrieve Coinbase candles. Check your connection and try again.'}
-}
-$('tf').onchange=chart;$('h4Refresh').onclick=refreshH4;
-$('notify').onclick=async()=>{
-  if(!('Notification'in window)){$('notifyStatus').textContent='Notifications are unsupported in this browser.';return}
-  const p=await Notification.requestPermission();
-  $('notifyStatus').textContent=p==='granted'?'Permission granted. H4 browser alerts are not implemented yet.':'Permission not granted.';
-};
-ticker();chart();refreshH4();setInterval(ticker,60000);setInterval(chart,60000);setInterval(refreshH4,300000);
+function analyse(bars){if(bars.length<25)return {bias:'INSUFFICIENT DATA',why:'Need at least 25 completed candles.'};const s=structure(bars),l=liquidity(bars,s),e=sweepEvidence(bars,s);return {...s,...l,evidence:e}}
+function paint(prefix,a){$(prefix+'Bias').textContent=a.bias+(a.event?' · '+a.event:'');$(prefix+'Bias').className='bias '+(a.bias==='BULLISH'?'bull':a.bias==='BEARISH'?'bear':'');
+ $(prefix+'Status').textContent=a.bias==='NEUTRAL'?'Mixed structure':a.bias==='INSUFFICIENT DATA'?'Insufficient data':'Structure assessed';
+ const evidence=a.evidence?' Recent '+a.evidence.direction+' sweep + displacement evidence detected.':' No recent confirmed sweep + displacement evidence; bias is based on structure only.';
+ if(a.bias==='NEUTRAL')$(prefix+'Detail').textContent=a.why+evidence+' Nearest BSL: '+describePool(a.buy,a.price)+'. Nearest SSL: '+describePool(a.sell,a.price)+'.';
+ else $(prefix+'Detail').textContent=a.why+evidence+' Likely directional target: '+describePool(a.preferred,a.price)+'. Opposing-side liquidity: '+describePool(a.alternative,a.price)+'.'}
+async function refresh(){['h4','h1','m15'].forEach(p=>{$(p+'Status').textContent='Checking…';$(p+'Bias').textContent='Analysing…'});
+ try{const [a,b,c]=await Promise.all([getCandles(14400,300),getCandles(3600,160),getCandles(900,160)]);
+ paint('h4',analyse(a));paint('h1',analyse(b));paint('m15',analyse(c));$('updatedAnalysis').textContent='Updated '+new Date().toLocaleTimeString()+' · H4 '+a.length+' candles · H1 '+b.length+' candles · M15 '+c.length+' candles';
+ }catch(e){['h4','h1','m15'].forEach(p=>{$(p+'Status').textContent='Feed unavailable';$(p+'Bias').textContent='Data unavailable';$(p+'Detail').textContent='Could not retrieve Coinbase candles. Check connection and retry.'})}}
+$('tf').onchange=chart;$('refresh').onclick=refresh;$('notify').onclick=async()=>{if(!('Notification'in window)){$('notifyStatus').textContent='Notifications unsupported in this browser.';return}
+ const p=await Notification.requestPermission();$('notifyStatus').textContent=p==='granted'?'Permission granted. Signal notifications are not implemented yet.':'Permission not granted.'};
+ticker();chart();refresh();setInterval(ticker,60000);setInterval(chart,60000);setInterval(refresh,300000);
 if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
-</script>
-</body>
-</html>
+</script></body></html>
