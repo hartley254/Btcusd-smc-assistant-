@@ -260,7 +260,37 @@ function drawChart(a){
   ctx.fillRect(cx-Math.max(1,step*.28),top,
    Math.max(2,step*.56),Math.max(1,bot-top));
  });
+ // BUY / SELL entry arrows.
+ const chartSetups=setupsFor(a.tf,bars).setups;
 
+ chartSetups.forEach(s=>{
+  if(s.retestIndex<visibleStart)return;
+
+  const b=bars[s.retestIndex];
+  if(!b)return;
+
+  const x=10+(s.retestIndex-visibleStart)*step+step/2;
+
+  ctx.beginPath();
+
+  if(s.direction==='BULLISH'){
+   const yy=Math.min(h-8,y(b[1])+12);
+   ctx.moveTo(x,yy-10);
+   ctx.lineTo(x-6,yy);
+   ctx.lineTo(x+6,yy);
+   ctx.closePath();
+   ctx.fillStyle='#31c48d';
+  }else{
+   const yy=Math.max(8,y(b[2])-12);
+   ctx.moveTo(x,yy+10);
+   ctx.lineTo(x-6,yy);
+   ctx.lineTo(x+6,yy);
+   ctx.closePath();
+   ctx.fillStyle='#ff6b6b';
+  }
+
+  ctx.fill();
+ });
  $('chartInfo').textContent=
   a.tf+' · '+visible.length+
   ' candles · nearest OBs · localized liquidity markings.';
