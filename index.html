@@ -135,12 +135,88 @@ function renderAlerts(analyses){
 function notifySetup(s){if(!alertKeys.has(s.key)){alertKeys.add(s.key);saveAlertKeys();if('Notification'in window&&Notification.permission==='granted'){try{new Notification('BTC SMC '+s.direction+' retest',{body:s.timeframe+' OB retest after '+s.clear.type+' '+s.clear.method+'. Target: '+money(s.target?.level)+'.'})}catch(e){}}}}
  
 function renderZones(analyses){const zones=analyses.flatMap(a=>a.zones.map(z=>({...z,timeframe:a.tf}))).sort((a,b)=>b.createdAt-a.createdAt);$('zoneStatus').textContent=zones.length+' OB/FVG zones';$('zoneList').innerHTML=zones.length?zones.slice(-9).reverse().map(z=>'<div class="zone"><strong class="'+(z.direction==='BULLISH'?'good':'bad')+'">'+z.direction+' '+z.timeframe+' ORDER BLOCK</strong><br>OB '+money(z.obLow)+' – '+money(z.obHigh)+' · Source candle: '+z.sourceCandle+'<br>FVG '+money(z.fvgLow)+' – '+money(z.fvgHigh)+' · Displacement/FVG: '+timeOf(z.createdAt)+'</div>').join(''):'<div class="empty">No qualifying displacement + FVG order blocks identified in the loaded candles.</div>'}
-function drawChart(a){const c=$('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);const bars=a?.bars||[];if(!bars.length)return;const visible=bars.slice(-100),z=a.zones||[],p=a.pools,low=Math.min(...visible.map(b=>b[1])),high=Math.max(...visible.map(b=>b[2])),span=high-low||1,pad=18;const y=v=>h-pad-(v-low)/span*(h-pad*2);ctx.strokeStyle='#263646';ctx.lineWidth=1;for(let i=0;i<5;i++){const yy=pad+i*(h-pad*2)/4;ctx.beginPath();ctx.moveTo(0,yy);ctx.lineTo(w,yy);ctx.stroke()}const step=(w-20)/visible.length;
- // Zones and FVGs, clipped to the visible price scale.
- z.slice(-8).forEach(v=>{ctx.fillStyle=v.direction==='BULLISH'?'rgba(182,156,255,.13)':'rgba(182,156,255,.13)';const top=Math.min(y(v.obHigh),y(v.obLow)),bottom=Math.max(y(v.obHigh),y(v.obLow));ctx.fillRect(0,top,w,bottom-top);ctx.strokeStyle='rgba(182,156,255,.7)';ctx.strokeRect(0,top,w,bottom-top);ctx.fillStyle='rgba(255,255,255,.07)';const ft=Math.min(y(v.fvgHigh),y(v.fvgLow)),fb=Math.max(y(v.fvgHigh),y(v.fvgLow));ctx.fillRect(0,ft,w,fb-ft)});
- const line=(level,color,dash)=>{if(level==null||level<low||level>high)return;ctx.strokeStyle=color;ctx.setLineDash(dash||[]);ctx.beginPath();ctx.moveTo(0,y(level));ctx.lineTo(w,y(level));ctx.stroke();ctx.setLineDash([])};p?.bslAbove?.slice(0,2).forEach(v=>line(v.level,'#f3c969',[5,4]));p?.sslBelow?.slice(0,2).forEach(v=>line(v.level,'#66b5ff',[5,4]));
- visible.forEach((b,i)=>{const [t,l,hi,o,cl]=b,up=cl>=o,cx=10+i*step+step/2;ctx.strokeStyle=up?'#31c48d':'#ff6b6b';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(cx,y(hi));ctx.lineTo(cx,y(l));ctx.stroke();const top=y(Math.max(o,cl)),bot=y(Math.min(o,cl));ctx.fillRect(cx-Math.max(1,step*.28),top,Math.max(2,step*.56),Math.max(1,bot-top))});
- $('chartInfo').textContent=a.tf+' · '+visible.length+' recent candles shown · dashed lines: nearest BSL/SSL · shaded areas: OB/FVG zones. '+(a.target?'Next target '+money(a.target):'')}
+function drawChart(a){
+ const c=$('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;
+ ctx.clearRect(0,0,w,h);
+ const bars=a?.bars||[];
+ if(!bars.length)return;
+
+ const visible=bars.slice(-100),z=a.zones||[],p=a.pools;
+ const low=Math.min(...visible.map(b=>b[1]));
+ const high=Math.max(...visible.map(b=>b[2]));
+ const span=high-low||1,pad=18;
+ const step=(w-20)/visible.length;
+ const visibleStart=bars.length-visible.length;
+ const y=v=>h-pad-(v-low)/span*(h-pad*2);
+
+ ctx.strokeStyle='#263646';
+ for(let i=0;i<5;i++){
+  const yy=pad+i*(h-pad*2)/4;
+  ctx.beginPath();ctx.moveTo(0,yy);ctx.lineTo(w,yy);ctx.stroke();
+ }
+
+ // Nearest OB above and below price.
+ const current=visible.at(-1)[4];
+ const above=z.filter(v=>v.obLow>current).sort((x,y)=>x.obLow-y.obLow)[0];
+ const below=z.filter(v=>v.obHigh<current).sort((x,y)=>y.obHigh-x.obHigh)[0];
+
+ [above,below].filter(Boolean).forEach(v=>{
+  const x1=Math.max(0,10+(v.obIndex-visibleStart)*step+step*.2);
+  const endIndex=Math.min(bars.length-1,v.firstRetestIndex??bars.length-1);
+  const x2=Math.min(w,10+(endIndex-visibleStart)*step+step*.8);
+  const top=Math.min(y(v.obHigh),y(v.obLow));
+  const bottom=Math.max(y(v.obHigh),y(v.obLow));
+  if(x2<x1)return;
+
+  ctx.fillStyle='rgba(182,156,255,.16)';
+  ctx.fillRect(x1,top,Math.max(3,x2-x1),Math.max(1,bottom-top));
+  ctx.strokeStyle='rgba(182,156,255,.85)';
+  ctx.strokeRect(x1,top,Math.max(3,x2-x1),Math.max(1,bottom-top));
+
+  const ft=Math.min(y(v.fvgHigh),y(v.fvgLow));
+  const fb=Math.max(y(v.fvgHigh),y(v.fvgLow));
+  ctx.fillStyle='rgba(255,255,255,.07)';
+  ctx.fillRect(x1,ft,Math.max(3,x2-x1),Math.max(1,fb-ft));
+ });
+
+ // Short liquidity markings beside the pivot candles.
+ const poolSegments=(pool,color)=>{
+  if(!pool||pool.level<low||pool.level>high)return;
+  (pool.members||[]).forEach(m=>{
+   if(m.i<visibleStart||m.i>=bars.length)return;
+   const cx=10+(m.i-visibleStart)*step+step/2;
+   ctx.strokeStyle=color;
+   ctx.setLineDash([4,3]);
+   ctx.beginPath();
+   ctx.moveTo(Math.max(0,cx-step*2),y(pool.level));
+   ctx.lineTo(Math.min(w,cx+step*3),y(pool.level));
+   ctx.stroke();
+   ctx.setLineDash([]);
+  });
+ };
+
+ p?.bslAbove?.slice(0,2).forEach(v=>poolSegments(v,'#f3c969'));
+ p?.sslBelow?.slice(0,2).forEach(v=>poolSegments(v,'#66b5ff'));
+
+ // Candlesticks.
+ visible.forEach((b,i)=>{
+  const [t,l,hi,o,cl]=b;
+  const up=cl>=o,cx=10+i*step+step/2;
+  ctx.strokeStyle=up?'#31c48d':'#ff6b6b';
+  ctx.fillStyle=ctx.strokeStyle;
+  ctx.beginPath();
+  ctx.moveTo(cx,y(hi));
+  ctx.lineTo(cx,y(l));
+  ctx.stroke();
+  const top=y(Math.max(o,cl)),bot=y(Math.min(o,cl));
+  ctx.fillRect(cx-Math.max(1,step*.28),top,
+   Math.max(2,step*.56),Math.max(1,bot-top));
+ });
+
+ $('chartInfo').textContent=
+  a.tf+' · '+visible.length+
+  ' candles · nearest OBs · localized liquidity markings.';
+ }
 async function refresh(){['h4','h1','m15'].forEach(p=>{$(p+'Status').textContent='Loading…';$(p+'Bias').textContent='Analysing…'});$('engineStatus').textContent='Scanning';try{const [h4,h1,m15,chartTf]=await Promise.all([getCandles('4h',LIMIT),getCandles('1h',LIMIT),getCandles('15m',LIMIT),getCandles($('tf').value,LIMIT)]);const analyses=[setupsFor('H4',h4),setupsFor('H1',h1),setupsFor('M15',m15)],map=new Map(analyses.map(a=>[a.tf,a]));renderFrame('h4',map.get('H4'));renderFrame('h1',map.get('H1'));renderFrame('m15',map.get('M15'));renderZones(analyses);renderAlerts(analyses);const chartA=map.get($('tf').value==='4h'?'H4':$('tf').value==='1h'?'H1':$('tf').value==='15m'?'M15':'M15');const display={...chartA,tf:$('tf').value,bars:chartTf,zones:detectZones(chartTf),pools:liquidity(chartTf,structure(chartTf))};display.target=targetFor(display.pools,structure(chartTf).bias,chartTf.at(-1)?.[4]);drawChart(display);$('updatedAnalysis').textContent='Analysis updated '+new Date().toLocaleTimeString()+' · '+marketSource+' · H4/H1/M15 each loaded up to '+LIMIT+' candles.'}catch(e){$('engineStatus').textContent='Data unavailable';$('updatedAnalysis').textContent='Analysis failed: '+(e?.message||'Unknown error')+' · Check connection and refresh.'}}
 $('tf').addEventListener('change',refresh);$('refresh').addEventListener('click',async()=>{cache.clear();await Promise.all([ticker(),refresh()])});$('notify').addEventListener('click',async()=>{if(!('Notification'in window)){$('notifyStatus').textContent='Notifications are not supported in this browser.';return}const p=await Notification.requestPermission();$('notifyStatus').textContent=p==='granted'?'Browser notifications enabled. Keep the app open for monitoring.':'Notification permission was not granted.'});
 (async()=>{await ticker();await refresh();setInterval(ticker,60000);setInterval(refresh,60000);if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}))})();
