@@ -65,11 +65,47 @@ function pivots(bars){const out=[];for(let i=2;i<bars.length-2;i++){let hi=true,
 function structure(bars){const ps=pivots(bars),hs=ps.filter(p=>p.type==='high'),ls=ps.filter(p=>p.type==='low');let bias='NEUTRAL',why='Structure is mixed or not yet clear.',event='No fresh BOS or CHOCH/MSS';if(hs.length>=2&&ls.length>=2){const h1=hs.at(-2),h2=hs.at(-1),l1=ls.at(-2),l2=ls.at(-1);if(h2.level>h1.level&&l2.level>l1.level){bias='BULLISH';why='Higher highs and higher lows.'}else if(h2.level<h1.level&&l2.level<l1.level){bias='BEARISH';why='Lower highs and lower lows.'}}
  const last=bars.at(-1),lh=hs.at(-1),ll=ls.at(-1);if(lh&&last[4]>lh.level){event=bias==='BEARISH'?'Bullish CHOCH / MSS':'Bullish BOS';bias='BULLISH';why='Latest completed candle closed above the last confirmed swing high.'}else if(ll&&last[4]<ll.level){event=bias==='BULLISH'?'Bearish CHOCH / MSS':'Bearish BOS';bias='BEARISH';why='Latest completed candle closed below the last confirmed swing low.'}return{bias,why,event,ps,hs,ls}}
 function liquidity(bars,s){const price=bars.at(-1)?.[4]||0,a=atr(bars,bars.length-1)||price*.001,tol=Math.max(price*.0005,a*.15);function pool(points,type){const groups=[];points.forEach(p=>{let g=groups.find(z=>Math.abs(z.mean-p.level)<=tol);if(!g){g={levels:[],members:[],mean:p.level,firstIndex:p.i};groups.push(g)}g.levels.push(p.level);g.members.push(p);g.firstIndex=Math.min(g.firstIndex,p.i);g.mean=g.levels.reduce((v,n)=>v+n,0)/g.levels.length});return groups.map(g=>({type,level:g.mean,count:g.levels.length,firstIndex:g.firstIndex,members:g.members})).sort((x,y)=>Math.abs(x.level-price)-Math.abs(y.level-price))}const bsl=pool(s.hs,'BSL'),ssl=pool(s.ls,'SSL');return{price,bsl,ssl,bslAbove:bsl.filter(p=>p.level>price),sslBelow:ssl.filter(p=>p.level<price)}}
-function detectZones(bars){const zones=[];for(let i=16;i<bars.length;i++){const av=atr(bars,i-1);if(!av)continue;const ob=bars[i-2],disp=bars[i-1],third=bars[i],body=Math.abs(disp[4]-disp[3]),range=disp[2]-disp[1];if(range<=0||body<av*1.05||body/range<.58)continue;
- const bull=disp[4]>disp[3]&&third[1]>ob[2],bear=disp[4]<disp[3]&&third[2]<ob[1];if(!bull&&!bear)continue;
- const direction=bull?'BULLISH':'BEARISH',lo=bull?ob[1]:ob[1],hi=bull?ob[2]:ob[2],fvgLo=bull?ob[2]:third[2],fvgHi=bull?third[1]:ob[1];if(fvgHi<=fvgLo)continue;
- zones.push({direction,obLow:lo,obHigh:hi,fvgLow:fvgLo,fvgHigh:fvgHi,obIndex:i-2,createdIndex:i,createdAt:third[0],sourceCandle:ob[3]===ob[4]?'Doji':ob[4]>ob[3]?'Bullish':'Bearish',displacementAt:disp[0],timeframe:null})}
- return zones.slice(-24)}
+function detectZones(bars){
+ const zones=[];
+ for(let i=16;i<bars.length;i++){
+  const av=atr(bars,i-1);
+  if(!av)continue;
+  const ob=bars[i-2],disp=bars[i-1],third=bars[i];
+  const body=Math.abs(disp[4]-disp[3]),range=disp[2]-disp[1];
+  if(range<=0||body<av*1.05||body/range<.58)continue;
+
+  const bull=disp[4]>disp[3]&&third[1]>ob[2];
+  const bear=disp[4]<disp[3]&&third[2]<ob[1];
+  if(!bull&&!bear)continue;
+
+  const direction=bull?'BULLISH':'BEARISH';
+  const lo=ob[1],hi=ob[2];
+  const fvgLo=bull?ob[2]:third[2];
+  const fvgHi=bull?third[1]:ob[1];
+  if(fvgHi<=fvgLo)continue;
+
+  zones.push({
+   direction,obLow:lo,obHigh:hi,
+   fvgLow:fvgLo,fvgHigh:fvgHi,
+   obIndex:i-2,createdIndex:i,
+   createdAt:third[0],
+   sourceCandle:ob[3]===ob[4]?'Doji':ob[4]>ob[3]?'Bullish':'Bearish',
+   displacementAt:disp[0],timeframe:null
+  });
+ }
+
+ zones.forEach(z=>{
+  z.firstRetestIndex=bars.length-1;
+  for(let j=z.createdIndex+1;j<bars.length;j++){
+   if(bars[j][2]>=z.obLow&&bars[j][1]<=z.obHigh){
+    z.firstRetestIndex=j;
+    break;
+   }
+  }
+ });
+
+ return zones.slice(-24);
+}
 function clearedLiquidity(bars,pools,fromIndex,direction){const wanted=direction==='BULLISH'?'SSL':'BSL',levels=(wanted==='SSL'?pools.ssl:pools.bsl);for(let i=Math.max(0,fromIndex);i<bars.length;i++){const b=bars[i];for(const pool of levels){const confirmed=pool.members.filter(p=>p.i+2<i);if(!confirmed.length)continue;const level=confirmed.reduce((sum,p)=>sum+p.level,0)/confirmed.length,cleared=wanted==='SSL'?(b[1]<level||b[4]<level):(b[2]>level||b[4]>level);if(cleared)return{index:i,time:b[0],level,type:wanted,method:(wanted==='SSL'?b[4]<level:b[4]>level)?'close beyond':'wick sweep'}}}return null}
 function targetFor(pools,direction,price){const arr=direction==='BULLISH'?pools.bsl:pools.ssl;return arr.filter(p=>direction==='BULLISH'?p.level>price:p.level<price).sort((a,b)=>Math.abs(a.level-price)-Math.abs(b.level-price))[0]||null}
 function setupsFor(tf,bars){const s=structure(bars),p=liquidity(bars,s),zones=detectZones(bars).map(z=>({...z,timeframe:tf})),setups=[];zones.forEach(z=>{const clear=clearedLiquidity(bars,p,z.createdIndex,z.direction);if(!clear)return;for(let i=clear.index+1;i<bars.length;i++){const b=bars[i],touch=b[2]>=z.obLow&&b[1]<=z.obHigh;if(touch){const closeInside=b[4]>=z.obLow&&b[4]<=z.obHigh,key=[tf,z.direction,z.createdAt,clear.time,b[0]].join(':');setups.push({...z,clear,retestIndex:i,retestTime:b[0],closeInside,target:targetFor(p,z.direction,b[4]),key});break}}});return{tf,bars,structure:s,pools:p,zones,setups}}
