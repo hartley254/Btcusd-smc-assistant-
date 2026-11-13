@@ -125,7 +125,10 @@ function renderFrame(prefix,a){
 
 function renderAlerts(analyses){
  const triggered=analyses.flatMap(a=>a.setups);
- const fresh=triggered.filter(s=>s.retestIndex>=s.bars.length-2);
+ const fresh=triggered.filter(s=>{
+  const a=analyses.find(v=>v.tf===s.timeframe);
+  return a&&s.retestIndex>=a.bars.length-2;
+});
  fresh.forEach(notifySetup);
 
  const active=analyses.flatMap(a=>{
