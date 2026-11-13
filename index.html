@@ -227,24 +227,59 @@ function drawChart(a){
   ctx.fillRect(x1,ft,Math.max(3,x2-x1),Math.max(1,fb-ft));
  });
 
- // Short liquidity markings beside the pivot candles.
- const poolSegments=(pool,color)=>{
-  if(!pool||pool.level<low||pool.level>high)return;
-  (pool.members||[]).forEach(m=>{
-   if(m.i<visibleStart||m.i>=bars.length)return;
-   const cx=10+(m.i-visibleStart)*step+step/2;
-   ctx.strokeStyle=color;
-   ctx.setLineDash([4,3]);
-   ctx.beginPath();
-   ctx.moveTo(Math.max(0,cx-step*2),y(pool.level));
-   ctx.lineTo(Math.min(w,cx+step*3),y(pool.level));
-   ctx.stroke();
-   ctx.setLineDash([]);
-  });
- };
+ // Historical liquidity lines.
+const drawLiquidity=(pools,type,color)=>{
+ (pools||[]).forEach(pool=>{
+  if(pool.level<low||pool.level>high)return;
 
- p?.bslAbove?.slice(0,2).forEach(v=>poolSegments(v,'#f3c969'));
- p?.sslBelow?.slice(0,2).forEach(v=>poolSegments(v,'#66b5ff'));
+  const members=pool.members||[];
+  if(!members.length)return;
+
+  const first=Math.min(...members.map(m=>m.i));
+  const confirmedAfter=Math.max(...members.map(m=>m.i+3));
+  let clearedAt=-1;
+
+  for(let i=confirmedAfter;i<bars.length;i++){
+   const b=bars[i];
+   const cleared=type==='BSL'
+    ? b[2]>pool.level
+    : b[1]<pool.level;
+
+   if(cleared){
+    clearedAt=i;
+    break;
+   }
+  }
+
+  const x1=Math.max(0,10+(first-visibleStart)*step);
+  const x2=w-4;
+  const yy=y(pool.level);
+
+  ctx.strokeStyle=color;
+  ctx.lineWidth=1.5;
+  ctx.setLineDash(clearedAt>=0?[]:[5,4]);
+  ctx.beginPath();
+  ctx.moveTo(x1,yy);
+  ctx.lineTo(x2,yy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle=color;
+  ctx.font='10px sans-serif';
+  ctx.fillText(type,Math.max(x1+3,x2-25),yy-4);
+
+  if(clearedAt>=visibleStart){
+   const cx=10+(clearedAt-visibleStart)*step+step/2;
+   ctx.beginPath();
+   ctx.arc(cx,yy,4,0,Math.PI*2);
+   ctx.fill();
+  }
+ });
+};
+
+drawLiquidity(p?.bsl,'BSL','#f3c969');
+drawLiquidity(p?.ssl,'SSL','#66b5ff');
+   
 
  // Candlesticks.
  visible.forEach((b,i)=>{
