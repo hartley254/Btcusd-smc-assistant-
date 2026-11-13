@@ -34,15 +34,22 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:10px 20px 28p
     <select id="tf">
       <option value="60">1 minute</option><option value="300" selected>5 minutes</option>
       <option value="900">15 minutes</option><option value="3600">1 hour</option>
-      <option value="21600">4 hours</option>
+      <option value="14400">4 hours</option>
     </select>
   </div>
   <canvas id="chart" width="700" height="240"></canvas>
   <p class="notice">Coinbase BTC-USD spot data may differ from a broker's BTCUSD CFD price.</p>
 </section>
+<section class="card" id="h4Card">
+  <div class="row"><strong>H4 market bias</strong><span class="pill" id="h4Status">Checking…</span></div>
+  <div id="h4Bias" style="font-size:22px;font-weight:750;margin:12px 0 6px">Waiting for H4 data</div>
+  <p class="notice" id="h4Detail">Checking confirmed swing sweeps and displacement on completed 4-hour candles.</p>
+  <div class="row"><span class="notice" id="h4Updated">—</span><button id="h4Refresh">Refresh H4</button></div>
+  <p class="notice">Experimental rules-based detection. This is a market-bias study, not an entry signal or financial advice.</p>
+</section>
 <section class="card">
   <div class="row"><strong>SMC alert engine</strong><span class="pill">In development</span></div>
-  <p class="notice">No buy/sell signals are generated yet. Next we will implement measurable H4 bias, H1 structure, M15 liquidity sweeps and M5 confirmation rules, then test them against historical data.</p>
+  <p class="notice">H4 bias detection is the first experimental module. H1 structure, M15 liquidity sweeps, M5 confirmation and order-block execution alerts are not implemented yet.</p>
   <button id="notify">Enable browser notifications</button>
   <p class="notice" id="notifyStatus">Browser notifications may not arrive when the app is closed.</p>
 </section>
@@ -65,17 +72,32 @@ async function ticker(){
     $('updated').textContent=new Date().toLocaleTimeString();$('connection').textContent='Live feed';
   }catch(e){$('connection').textContent='Feed unavailable'}
 }
+function aggregateFourHour(raw){
+  const sorted=raw.slice().sort((a,b)=>a[0]-b[0]),groups=new Map(),now=Math.floor(Date.now()/1000);
+  for(const v of sorted){
+    const bucket=Math.floor(v[0]/14400)*14400;
+    if(bucket+14400>now)continue;
+    if(!groups.has(bucket))groups.set(bucket,[bucket,v[1],v[2],v[3],v[4],v[5]||0]);
+    else{
+      const g=groups.get(bucket);g[1]=Math.min(g[1],v[1]);g[2]=Math.max(g[2],v[2]);g[4]=v[4];g[5]+=(v[5]||0);
+    }
+  }
+  return [...groups.values()].sort((a,b)=>a[0]-b[0]);
+}
+async function getCandles(granularity,count=160){
+  const end=new Date(),seconds=granularity===14400?3600:granularity,start=new Date(end.getTime()-seconds*count*1000);
+  const apiGranularity=granularity===14400?3600:granularity;
+  const u='https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity='+apiGranularity+'&start='+encodeURIComponent(start.toISOString())+'&end='+encodeURIComponent(end.toISOString());
+  const raw=await fetch(u).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()});
+  return granularity===14400?aggregateFourHour(raw):raw.slice().sort((a,b)=>a[0]-b[0]);
+}
 async function chart(){
-  try{
-    const g=Number($('tf').value),end=new Date(),start=new Date(end.getTime()-g*160*1000);
-    const u='https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity='+g+'&start='+encodeURIComponent(start.toISOString())+'&end='+encodeURIComponent(end.toISOString());
-    candles=(await fetch(u).then(r=>r.json())).reverse();draw();
-  }catch(e){}
+  try{const g=Number($('tf').value);candles=await getCandles(g,g===14400?300:160);draw()}catch(e){}
 }
 function draw(){
   const c=$('chart'),x=c.getContext('2d'),w=c.width,h=c.height;x.clearRect(0,0,w,h);
   if(!candles.length)return;
-  const lo=Math.min(...candles.map(v=>v[3])),hi=Math.max(...candles.map(v=>v[2])),pad=12,range=hi-lo||1;
+  const lo=Math.min(...candles.map(v=>v[1])),hi=Math.max(...candles.map(v=>v[2])),pad=12,range=hi-lo||1;
   x.strokeStyle='#263646';
   for(let i=0;i<5;i++){const y=pad+i*(h-2*pad)/4;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}
   const step=(w-20)/candles.length;
@@ -86,13 +108,78 @@ function draw(){
     x.fillRect(cx-Math.max(1,step*.28),yy(Math.max(o,cl)),Math.max(2,step*.56),Math.max(1,yy(Math.min(o,cl))-yy(Math.max(o,cl))));
   });
 }
-$('tf').onchange=chart;
+function atrBefore(bars,index){
+  if(index<15)return null;
+  let total=0;
+  for(let k=index-14;k<index;k++){
+    const b=bars[k],prev=bars[k-1];
+    total+=Math.max(b[2]-b[1],Math.abs(b[2]-prev[4]),Math.abs(b[1]-prev[4]));
+  }
+  return total/14;
+}
+function findH4Bias(bars){
+  if(bars.length<25)return {bias:'INSUFFICIENT DATA',reason:'At least 25 completed H4 candles are needed.'};
+  const pivots=[];
+  for(let i=2;i<bars.length-2;i++){
+    const b=bars[i];let sh=true,sl=true;
+    for(let k=i-2;k<=i+2;k++){if(k===i)continue;if(bars[k][2]>=b[2])sh=false;if(bars[k][1]<=b[1])sl=false}
+    if(sh)pivots.push({type:'high',index:i,level:b[2]});
+    if(sl)pivots.push({type:'low',index:i,level:b[1]});
+  }
+  const candidates=[];
+  for(const p of pivots){
+    for(let i=p.index+3;i<Math.min(bars.length-1,p.index+31);i++){
+      const b=bars[i],atr=atrBefore(bars,i);if(!atr)continue;
+      const threshold=Math.max(p.level*0.0002,atr*0.05);
+      const bullish=p.type==='low'&&b[1]<=p.level-threshold&&b[4]>p.level;
+      const bearish=p.type==='high'&&b[2]>=p.level+threshold&&b[4]<p.level;
+      if(!bullish&&!bearish)continue;
+      for(let j=i+1;j<=Math.min(i+3,bars.length-1);j++){
+        const d=bars[j],a=atrBefore(bars,j);if(!a)continue;
+        const range=d[2]-d[1],body=Math.abs(d[4]-d[3]);if(range<=0)continue;
+        const bodyRatio=body/range;
+        const prevHigh=Math.max(bars[j-1][2],bars[j-2][2],bars[j-3][2]);
+        const prevLow=Math.min(bars[j-1][1],bars[j-2][1],bars[j-3][1]);
+        const bull=p.type==='low'&&d[4]>d[3]&&body>=1.2*a&&bodyRatio>=0.60&&d[4]>=d[1]+range*0.75&&d[4]>prevHigh;
+        const bear=p.type==='high'&&d[4]<d[3]&&body>=1.2*a&&bodyRatio>=0.60&&d[4]<=d[1]+range*0.25&&d[4]<prevLow;
+        if((bullish&&bull)||(bearish&&bear)){
+          candidates.push({bias:bull?'BULLISH':'BEARISH',pivot:p,sweepIndex:i,displacementIndex:j,sweepExtreme:bull?b[1]:b[2],displacementClose:d[4]});break;
+        }
+      }
+      if(candidates.some(c=>c.sweepIndex===i&&c.pivot.index===p.index))break;
+    }
+  }
+  candidates.sort((a,b)=>b.displacementIndex-a.displacementIndex);
+  for(const c of candidates){
+    let invalidated=false;
+    for(let k=c.displacementIndex+1;k<bars.length;k++){
+      if(c.bias==='BULLISH'&&bars[k][4]<c.sweepExtreme)invalidated=true;
+      if(c.bias==='BEARISH'&&bars[k][4]>c.sweepExtreme)invalidated=true;
+    }
+    const age=bars.length-1-c.displacementIndex;
+    if(!invalidated&&age<=20)return {...c,age,pivotLevel:c.pivot.level};
+  }
+  return {bias:'NEUTRAL',reason:candidates.length?'Latest qualifying setup was invalidated or is older than 20 H4 candles.':'No qualifying sweep followed by displacement was found in the available candles.'};
+}
+async function refreshH4(){
+  const status=$('h4Status'),bias=$('h4Bias'),detail=$('h4Detail');
+  status.textContent='Checking…';bias.textContent='Analysing completed candles…';
+  try{
+    const bars=await getCandles(14400,300),r=findH4Bias(bars);
+    if(r.bias==='BULLISH'||r.bias==='BEARISH'){
+      status.textContent='Signal found';bias.textContent=r.bias+' H4 BIAS';bias.style.color=r.bias==='BULLISH'?'var(--green)':'var(--red)';
+      detail.textContent='Swing level: $'+fmt(r.pivotLevel)+' · Sweep extreme: $'+fmt(r.sweepExtreme)+' · Displacement close: $'+fmt(r.displacementClose)+' · Signal age: '+r.age+' H4 candles.';
+    }else{status.textContent='No active bias';bias.textContent=r.bias;bias.style.color='var(--text)';detail.textContent=r.reason}
+    $('h4Updated').textContent='Updated '+new Date().toLocaleTimeString()+' · '+bars.length+' completed H4 candles';
+  }catch(e){status.textContent='Feed unavailable';bias.textContent='H4 data unavailable';bias.style.color='var(--text)';detail.textContent='Could not retrieve Coinbase candles. Check your connection and try again.'}
+}
+$('tf').onchange=chart;$('h4Refresh').onclick=refreshH4;
 $('notify').onclick=async()=>{
   if(!('Notification'in window)){$('notifyStatus').textContent='Notifications are unsupported in this browser.';return}
   const p=await Notification.requestPermission();
-  $('notifyStatus').textContent=p==='granted'?'Permission granted. SMC alerts will be added after the signal engine is built.':'Permission not granted.';
+  $('notifyStatus').textContent=p==='granted'?'Permission granted. H4 browser alerts are not implemented yet.':'Permission not granted.';
 };
-ticker();chart();setInterval(ticker,60000);setInterval(chart,60000);
+ticker();chart();refreshH4();setInterval(ticker,60000);setInterval(chart,60000);setInterval(refreshH4,300000);
 if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
 </script>
 </body>
