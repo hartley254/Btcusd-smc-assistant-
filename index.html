@@ -363,15 +363,93 @@ function renderChart(canvas,a){
  for(const e of a.liq.events.filter(e=>visible(e.i))){const xx=x(e.i-offset),yy=y(e.extreme);ctx.fillStyle=e.type==="BSL"?C.bear:C.ssl;ctx.beginPath();ctx.arc(xx,yy,4,0,Math.PI*2);ctx.fill();}
  ctx.fillStyle=C.muted;ctx.textAlign="center";[0,Math.floor(bars.length/3),Math.floor(2*bars.length/3),bars.length-1].forEach(i=>ctx.fillText(new Date(bars[i].time).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),x(i),h*.94));
 }
-function renderObs(a){
- const m15=S.data["15m"],m5=S.data["5m"],states=setupStates(a,m15,m5),items=[];
- for(const s of states.slice(-12).reverse()){const ob=s.ob;items.push({title:s.state,detail:ob.dir+" OB "+fmt(ob.lo)+"–"+fmt(ob.hi)+" · formed "+timeLabel(ob.createdTime)+(ob.firstTap!==null?" · first tap "+timeLabel(a.bars[ob.firstTap].time):" · not yet tapped")+(s.sweep?" · M15 "+s.sweep.type+" sweep "+timeLabel(s.sweep.time):"")+(s.target?" · next liquidity target "+fmt(s.target.level):" · no visible opposing target")+(s.state.startsWith("QUALIFIED")?" · M5: "+s.confirm:"")});}
- for(const e of a.st.events.slice(-3).reverse())items.push({title:e.dir+" "+e.kind,detail:fmt(e.level)+" · "+timeLabel(a.bars[e.i].time)});
- const sweeps=(m15?.liq.events||[]).slice(-3).reverse();for(const e of sweeps)items.push({title:"M15 "+e.type+" "+e.kind,detail:fmt(e.level)+" · "+timeLabel(e.time)});
- $("count").textContent=items.length+" observations";const box=$("observations");box.replaceChildren();
- if(!items.length){const d=document.createElement("div");d.className="item";d.textContent="No qualifying recent observations.";box.append(d);return;}
- for(const v of items.slice(0,12)){const d=document.createElement("div"),s=document.createElement("strong"),t=document.createElement("div");d.className="item";s.textContent=v.title;t.className="detail";t.textContent=v.detail;d.append(s,t);box.append(d);}
+
+function renderObs(a) {
+  if (!a) return;
+
+  const m5 = S.data["5m"];
+  const states = setupStates(a, null, m5);
+  const items = [];
+
+  // Display OB observations belonging to the selected timeframe.
+  for (const s of states.slice(-12).reverse()) {
+    const ob = s.ob;
+
+    items.push({
+      title: s.state,
+      detail:
+        ob.dir + " OB " +
+        fmt(ob.lo) + "–" + fmt(ob.hi) +
+        " · formed " + timeLabel(ob.createdTime) +
+        (ob.firstTap !== null
+          ? " · first tap " + timeLabel(a.bars[ob.firstTap].time)
+          : " · not yet tapped") +
+        (s.sweep
+          ? " · " + a.tf + " " + s.sweep.type +
+            " sweep " + timeLabel(s.sweep.time)
+          : "") +
+        (s.target
+          ? " · next liquidity target " + fmt(s.target.level)
+          : " · no visible opposing target") +
+        (s.state.startsWith("QUALIFIED")
+          ? " · M5: " + s.confirm
+          : "")
+    });
+  }
+
+  // Display structure events from the selected timeframe only.
+  for (const e of a.st.events.slice(-3).reverse()) {
+    items.push({
+      title: e.dir + " " + e.kind,
+      detail:
+        fmt(e.level) + " · " +
+        timeLabel(a.bars[e.i].time)
+    });
+  }
+
+  // Display liquidity sweeps from the selected timeframe only.
+  const sweeps = (a.liq.events || [])
+    .filter(e => e.kind === "sweep")
+    .slice(-3)
+    .reverse();
+
+  for (const e of sweeps) {
+    items.push({
+      title: a.tf + " " + e.type + " " + e.kind,
+      detail:
+        fmt(e.level) + " · " + timeLabel(e.time)
+    });
+  }
+
+  $("count").textContent =
+    items.length + " observations";
+
+  const box = $("observations");
+  box.replaceChildren();
+
+  if (!items.length) {
+    const d = document.createElement("div");
+    d.className = "item";
+    d.textContent = "No qualifying recent observations.";
+    box.append(d);
+    return;
+  }
+
+  for (const v of items.slice(0, 12)) {
+    const d = document.createElement("div");
+    const s = document.createElement("strong");
+    const t = document.createElement("div");
+
+    d.className = "item";
+    s.textContent = v.title;
+    t.className = "detail";
+    t.textContent = v.detail;
+
+    d.append(s, t);
+    box.append(d);
+  }
 }
+
 function renderSelected(){
  const tf=$("tf").value,a=S.data[tf];if(!a){$("chartInfo").textContent=S.errors[tf]?"Unavailable: "+S.errors[tf]:"Waiting for "+tf+" candles…";return;}
  try{renderChart($("chart"),a);renderObs(a);$("chartInfo").textContent=tf+" · "+Math.min(115,a.bars.length)+" completed candles · first wick touch ends OB box · source: "+(a.source||S.source)+(S.errors[tf]?" · STALE DATA":"");}catch(e){$("chartInfo").textContent="Chart error: "+e.message;console.error(e);}
