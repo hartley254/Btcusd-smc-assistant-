@@ -1,193 +1,1353 @@
-<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#080d16"><meta name="description" content="BTC market structure educational chart monitor">
-<link rel="manifest" href="./manifest.webmanifest"><title>BTC Hartley SMC</title>
-<style>
-:root{color-scheme:dark;--bg:#080d16;--panel:#111b29;--border:#29384a;--text:#eef4fb;--muted:#9aabba;--bull:#13b99a;--bear:#ed5266;--fvg:#9b65ef;--bsl:#f05a66;--ssl:#24cf83;--bos:#9ce6b5}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,sans-serif}
-header{padding:16px;border-bottom:1px solid var(--border);background:#0b1320}h1{font-size:20px;margin:0}header p,.muted,.note{color:var(--muted)}header p{font-size:12px;margin:4px 0 0}
-main{max-width:1180px;margin:auto;padding:12px;display:grid;gap:12px}.card{background:var(--panel);border:1px solid var(--border);border-radius:15px;padding:15px;min-width:0}
-.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.price{font-size:30px;font-weight:800;margin:7px 0}
-.stats,.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:12px}.stat,.metric{background:#0b1420;border:1px solid #1e2d3d;border-radius:9px;padding:10px;min-width:0}.stat small,.metric small{display:block;color:var(--muted);font-size:10px}.stat strong,.metric strong{display:block;margin-top:4px;font-size:13px;overflow-wrap:anywhere}
-select,button{min-height:42px;border:1px solid #52677d;border-radius:9px;background:#1c2c3d;color:white;padding:9px 12px;font:inherit}button{font-weight:650;cursor:pointer}.controls{display:flex;gap:8px;flex-wrap:wrap}
-canvas{display:block;width:100%;height:clamp(350px,62vw,560px);margin-top:13px;background:#080e17;border:1px solid #25374a;border-radius:10px}
-#chartCard:fullscreen{background:var(--bg);padding:14px;overflow:auto;border:0}#chartCard:fullscreen canvas{height:calc(100vh - 170px);min-height:320px}
-.legend{display:flex;gap:9px 16px;flex-wrap:wrap;margin-top:12px;color:#b5c1ce;font-size:11px}.legend span{display:inline-flex;align-items:center;gap:5px}.sw{width:10px;height:10px;border-radius:2px;display:inline-block}.dash{width:18px;border-top:2px dashed;display:inline-block}
-.note{font-size:11px;line-height:1.6;margin:9px 0 0}.status{font-size:11px;color:var(--muted)}.list{display:grid;gap:8px;margin-top:10px}.item{background:#0b1420;border:1px solid #223246;border-radius:9px;padding:10px;font-size:12px;line-height:1.6}
-footer{text-align:center;color:var(--muted);font-size:10px;padding:18px}
-@media(min-width:700px){.stats{grid-template-columns:repeat(4,1fr)}.metrics{grid-template-columns:repeat(3,1fr)}.card{padding:18px}}
-@media(max-width:420px){main{padding:9px}.card{padding:12px}}
-</style></head><body>
-<header><h1>BTC Hartley SMC</h1><p>Liquidity · Market structure · Order blocks · Fair value gaps · Educational monitor</p></header>
-<main>
-<section class="card"><div class="row"><span class="muted">BTC spot market reference</span><span id="connection" class="status">Connecting…</span></div>
-<div id="price" class="price">—</div><div id="change" class="muted">Waiting for market data</div>
-<div class="stats"><div class="stat"><small>24H HIGH</small><strong id="high">—</strong></div><div class="stat"><small>24H LOW</small><strong id="low">—</strong></div><div class="stat"><small>24H VOLUME</small><strong id="volume">—</strong></div><div class="stat"><small>UPDATED</small><strong id="updated">—</strong></div></div>
-<p id="source" class="note">Public spot data; prices can differ from broker feeds.</p></section>
-<section class="card" id="chartCard"><div class="row"><strong>BTCUSD · SMC chart</strong><div class="controls">
-<select id="tf" aria-label="Timeframe"><option value="1m">1 minute</option><option value="5m" selected>5 minutes</option><option value="15m">15 minutes</option><option value="1h">1 hour</option><option value="4h">4 hours</option></select>
-<button id="fullscreen" type="button">⛶ Fullscreen</button></div></div>
-<canvas id="chart" width="1500" height="760"></canvas>
-<div class="legend">
-<span><i class="sw" style="background:#13b99a"></i>Bullish OB</span><span><i class="sw" style="background:#ed5266"></i>Bearish OB</span><span><i class="sw" style="background:#9b65ef"></i>FVG</span>
-<span><i class="dash" style="border-color:#f05a66"></i>BSL</span><span><i class="dash" style="border-color:#24cf83"></i>SSL</span><span><i class="dash" style="border-color:#9ce6b5"></i>BOS / CHOCH</span><span>↟ Sweep</span></div>
-<p id="chartInfo" class="note">Waiting for candles…</p></section>
-<section class="card"><div class="row"><strong>Higher-timeframe context</strong><span id="status" class="status">Analysing…</span></div>
-<div class="metrics"><div class="metric"><small>H4 STRUCTURE</small><strong id="h4">—</strong></div><div class="metric"><small>H1 STRUCTURE</small><strong id="h1">—</strong></div><div class="metric"><small>M15 STRUCTURE</small><strong id="m15">—</strong></div></div>
-<p class="note">Structure labels describe chart history. They are not trade-entry signals or recommendations.</p></section>
-<section class="card"><div class="row"><strong>Selected timeframe · Observations</strong><span id="count" class="status">—</span></div><div id="observations" class="list"><div class="item">Scanning…</div></div></section>
-<section class="card"><div class="row"><strong>Chart event notifications</strong><span id="permission" class="status">Permission not requested</span></div>
-<div class="controls" style="margin-top:10px"><button id="notify">Enable notifications</button><button id="refresh">Refresh now</button></div>
-<div id="events" class="list"><div class="item">No new events this session.</div></div>
-<p class="note">Notifications describe educational chart observations only. They do not recommend buying, selling or entering trades. Browser notifications require permission and the app to remain active.</p></section>
-</main><footer>Educational market-structure visualizer · No trade execution · No financial recommendations</footer>
-<script>
-"use strict";
-const $=id=>document.getElementById(id), SEC={"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400}, LIMIT=420;
-const C={bg:"#080e17",grid:"#263649",muted:"#9aabba",bull:"#13b99a",bear:"#ed5266",fvg:"#9b65ef",bsl:"#f05a66",ssl:"#24cf83",bos:"#9ce6b5"};
-const S={data:{},seen:new Set(),events:[],busy:false,source:"Binance BTCUSDT"};
-const money=n=>Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:2}):"—";
-const time=t=>new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
-const clamp=(value,min,max)=>Math.min(Math.max(value,min),max);
-function normalize(rows,sec){return rows.filter(r=>+r[6]+sec*1000<=Date.now()).map(r=>[+r[0],+r[1],+r[2],+r[3],+r[4],+r[5]]).filter(c=>c.every(Number.isFinite)).sort((a,b)=>a[0]-b[0]);}
-async function binance(tf){
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),12000);
-
-  try{
-    let r=await fetch(
-      "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval="+tf+"&limit="+LIMIT,
-      {
-        cache:"no-store",
-        signal:controller.signal
-      }
-    );
-
-    if(!r.ok)throw Error("Binance HTTP "+r.status);
-
-    let b=normalize(await r.json(),SEC[tf]);
-
-    if(b.length<35)throw Error("Insufficient completed candles");
-
-    return b;
-
-  }catch(e){
-    if(controller.signal.aborted){
-      throw Error("Binance request timed out after 12 seconds");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080d16">
+  <meta name="description" content="BTC market structure educational chart monitor">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <title>BTC Hartley SMC</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080d16;
+      --panel: #111b29;
+      --border: #29384a;
+      --text: #eef4fb;
+      --muted: #9aabba;
+      --bull: #13b99a;
+      --bear: #ed5266;
+      --fvg: #9b65ef;
+      --bsl: #f05a66;
+      --ssl: #24cf83;
+      --bos: #9ce6b5;
+      --stale: #f0bc63;
     }
-    throw e;
-  }finally{
-    clearTimeout(timeout);
+    * { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 system-ui, sans-serif;
+}
+
+header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  background: #0b1320;
+}
+
+h1 { margin: 0; font-size: 20px; }
+header p, .muted, .note { color: var(--muted); }
+header p { margin: 4px 0 0; font-size: 12px; }
+
+main {
+  display: grid;
+  gap: 12px;
+  max-width: 1180px;
+  margin: auto;
+  padding: 12px;
+}
+
+.card {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--panel);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.price { margin: 7px 0; font-size: 30px; font-weight: 800; }
+
+.stats, .metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.stat, .metric {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #1e2d3d;
+  border-radius: 9px;
+  background: #0b1420;
+}
+.stat small, .metric small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.stat strong, .metric strong {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+select, button {
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid #52677d;
+  border-radius: 9px;
+  background: #1c2c3d;
+  color: white;
+  font: inherit;
+}
+
+button { font-weight: 650; cursor: pointer; }
+button:disabled { cursor: wait; opacity: .7; }
+
+select:focus-visible, button:focus-visible {
+  outline: 2px solid #8fc9ff;
+  outline-offset: 2px;
+}
+
+.controls { display: flex; gap: 8px; flex-wrap: wrap; }
+
+canvas {
+  display: block;
+  width: 100%;
+  height: clamp(350px, 62vw, 560px);
+  margin-top: 13px;
+  border: 1px solid #25374a;
+  border-radius: 10px;
+  background: #080e17;
+}
+    #chartCard:fullscreen {
+      overflow: auto;
+      padding: 14px;
+      border: 0;
+      background: var(--bg);
+    }
+
+    #chartCard:fullscreen canvas {
+      height: calc(100vh - 170px);
+      min-height: 320px;
+    }
+
+    .legend {
+      display: flex;
+      gap: 9px 16px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      color: #b5c1ce;
+      font-size: 11px;
+    }
+
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+    .dash { display: inline-block; width: 18px; border-top: 2px dashed currentColor; }
+    .note { margin: 9px 0 0; font-size: 11px; line-height: 1.6; }
+    .status { color: var(--muted); font-size: 11px; }
+    .status[data-state="stale"] { color: var(--stale); }
+    .status[data-state="error"] { color: var(--bear); }
+
+    .list { display: grid; gap: 8px; margin-top: 10px; }
+
+    .item {
+      padding: 10px;
+      border: 1px solid #223246;
+      border-radius: 9px;
+      background: #0b1420;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    footer {
+      padding: 18px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 10px;
+    }
+
+    @media (min-width: 700px) {
+      .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .card { padding: 18px; }
+    }
+
+    @media (max-width: 420px) {
+      main { padding: 9px; }
+      .card { padding: 12px; }
+      .price { font-size: 27px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>BTC Hartley SMC</h1>
+    <p>Liquidity · Market structure · Order blocks · Fair value gaps · Educational monitor</p>
+  </header>
+
+  <main>
+    <section class="card" aria-label="Bitcoin market summary">
+      <div class="row">
+        <span class="muted">BTC spot market reference</span>
+        <span id="connection" class="status" role="status">Connecting…</span>
+      </div>
+      <div id="price" class="price">—</div>
+      <div id="change" class="muted">Waiting for market data</div>
+      <div class="stats">
+        <div class="stat"><small>24H HIGH</small><strong id="high">—</strong></div>
+        <div class="stat"><small>24H LOW</small><strong id="low">—</strong></div>
+        <div class="stat"><small>24H VOLUME</small><strong id="volume">—</strong></div>
+        <div class="stat"><small>UPDATED</small><strong id="updated">—</strong></div>
+      </div>
+      <p id="source" class="note">Public spot data; prices can differ from broker feeds.</p>
+    </section>
+
+    <section class="card" id="chartCard" aria-label="BTC SMC chart">
+      <div class="row">
+        <strong>BTCUSD · SMC chart</strong>
+        <div class="controls">
+          <label class="muted" for="tf">Timeframe</label>
+          <select id="tf" aria-label="Timeframe">
+            <option value="1m">1 minute</option>
+            <option value="5m" selected>5 minutes</option>
+            <option value="15m">15 minutes</option>
+            <option value="1h">1 hour</option>
+            <option value="4h">4 hours</option>
+          </select>
+          <button id="fullscreen" type="button">⛶ Fullscreen</button>
+        </div>
+      </div>
+
+      <canvas id="chart" width="1500" height="760"
+        aria-label="Candlestick chart with historical market-structure annotations">
+        Chart rendering requires canvas support.
+      </canvas>
+
+      <div class="legend" aria-label="Chart legend">
+        <span><i class="sw" style="background:#13b99a"></i>Bullish OB</span>
+        <span><i class="sw" style="background:#ed5266"></i>Bearish OB</span>
+        <span><i class="sw" style="background:#9b65ef"></i>FVG</span>
+        <span style="color:#f05a66"><i class="dash"></i>BSL</span>
+        <span style="color:#24cf83"><i class="dash"></i>SSL</span>
+        <span style="color:#9ce6b5"><i class="dash"></i>BOS / CHOCH</span>
+        <span>↟ Sweep</span>
+      </div>
+      <p id="chartInfo" class="note" aria-live="polite">Waiting for candles…</p>
+    </section>
+
+    <section class="card" aria-label="Higher-timeframe context">
+      <div class="row">
+        <strong>Higher-timeframe context</strong>
+        <span id="status" class="status" role="status">Analysing…</span>
+      </div>
+      <div class="metrics">
+        <div class="metric"><small>H4 STRUCTURE</small><strong id="h4">—</strong></div>
+        <div class="metric"><small>H1 STRUCTURE</small><strong id="h1">—</strong></div>
+        <div class="metric"><small>M15 STRUCTURE</small><strong id="m15">—</strong></div>
+      </div>
+      <p class="note">Structure labels describe chart history. They are not trade-entry signals or recommendations.</p>
+    </section>
+
+    <section class="card" aria-label="Selected timeframe observations">
+      <div class="row">
+        <strong>Selected timeframe · Observations</strong>
+        <span id="count" class="status">—</span>
+      </div>
+      <div id="observations" class="list"><div class="item">Scanning…</div></div>
+    </section>
+
+    <section class="card" aria-label="Chart event notifications">
+      <div class="row">
+        <strong>Chart event notifications</strong>
+        <span id="permission" class="status">Permission not requested</span>
+      </div>
+      <div class="controls" style="margin-top:10px">
+        <button id="notify" type="button">Enable notifications</button>
+        <button id="refresh" type="button">Refresh now</button>
+      </div>
+      <div id="events" class="list"><div class="item">No new events this session.</div></div>
+      <p class="note">Notifications describe educational observations only. They are not trade recommendations. Browser notifications require permission and the app to remain active.</p>
+    </section>
+  </main>
+
+  <footer>Educational market-structure visualizer · No trade execution · No financial recommendations</footer>
+
+  <script>
+    "use strict";
+    const $ = id => document.getElementById(id);
+const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h"];
+const SECONDS = Object.freeze({ "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400 });
+const LIMIT = 420;
+const HOUR_MS = 3600000;
+const FOUR_HOURS_MS = 14400000;
+const COLORS = {
+  bg: "#080e17", grid: "#263649", muted: "#9aabba",
+  bull: "#13b99a", bear: "#ed5266", fvg: "#9b65ef",
+  bsl: "#f05a66", ssl: "#24cf83", bos: "#9ce6b5"
+};
+
+const S = {
+  data: Object.create(null),
+  seen: new Set(),
+  events: [],
+  busy: false,
+  source: "",
+  updatedAt: Object.create(null),
+  errors: Object.create(null),
+  requestId: Object.create(null)
+};
+
+const money = n => Number.isFinite(n)
+  ? "$" + n.toLocaleString("en-US", { maximumFractionDigits: 2 })
+  : "—";
+
+const timeLabel = ms => new Date(ms).toLocaleString([], {
+  month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+});
+
+const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
+
+function setStatus(message, state = "normal") {
+  const el = $("status");
+  el.textContent = message;
+  el.dataset.state = state;
+}
+
+function validOhlc(open, high, low, close, volume) {
+  return [open, high, low, close, volume].every(Number.isFinite) &&
+    high >= Math.max(open, close) &&
+    low <= Math.min(open, close) &&
+    high >= low && volume >= 0;
+}
+
+function normalizeBinance(rows, seconds) {
+  if (!Array.isArray(rows)) throw new Error("Invalid Binance candle response");
+  const now = Date.now();
+  const bars = new Map();
+
+  for (const row of rows) {
+    if (!Array.isArray(row) || row.length < 7) continue;
+    const t = Number(row[0]);
+    const open = Number(row[1]), high = Number(row[2]);
+    const low = Number(row[3]), close = Number(row[4]);
+    const volume = Number(row[5]), closeTime = Number(row[6]);
+
+    if (!Number.isFinite(t) || !Number.isFinite(closeTime) ||
+        closeTime > now || t + seconds * 1000 > now ||
+        !validOhlc(open, high, low, close, volume)) continue;
+
+    bars.set(t, [t, open, high, low, close, volume]);
+  }
+
+  return [...bars.values()].sort((a, b) => a[0] - b[0]);
+}
+
+function normalizeCoinbase(rows, seconds) {
+  if (!Array.isArray(rows)) throw new Error("Invalid Coinbase candle response");
+  const now = Date.now();
+  const bars = new Map();
+
+  for (const row of rows) {
+    if (!Array.isArray(row) || row.length < 6) continue;
+    const t = Number(row[0]) * 1000;
+    const low = Number(row[1]), high = Number(row[2]);
+    const open = Number(row[3]), close = Number(row[4]), volume = Number(row[5]);
+
+    if (!Number.isFinite(t) || t + seconds * 1000 > now ||
+        !validOhlc(open, high, low, close, volume)) continue;
+
+    bars.set(t, [t, open, high, low, close, volume]);
+  }
+
+  return [...bars.values()].sort((a, b) => a[0] - b[0]);
+}
+    function aggregateFourHourlyCandles(hourly) {
+      if (!Array.isArray(hourly)) throw new TypeError("Hourly candles must be an array");
+      const groups = new Map();
+
+      for (const candle of hourly) {
+        if (!candle || typeof candle !== "object") continue;
+        const { time, open, high, low, close, volume } = candle;
+        if (![time, open, high, low, close, volume].every(Number.isFinite) ||
+            time % HOUR_MS !== 0 ||
+            !validOhlc(open, high, low, close, volume)) continue;
+
+        const bucket = Math.floor(time / FOUR_HOURS_MS) * FOUR_HOURS_MS;
+        if (!groups.has(bucket)) groups.set(bucket, []);
+        groups.get(bucket).push(candle);
+      }
+
+      const result = [];
+      for (const [bucket, candles] of groups) {
+        candles.sort((a, b) => a.time - b.time);
+        if (candles.length !== 4) continue;
+        if (!candles.every((c, i) => c.time === bucket + i * HOUR_MS)) continue;
+
+        result.push({
+          time: bucket,
+          open: candles[0].open,
+          high: Math.max(...candles.map(c => c.high)),
+          low: Math.min(...candles.map(c => c.low)),
+          close: candles[3].close,
+          volume: candles.reduce((sum, c) => sum + c.volume, 0)
+        });
+      }
+
+      return result.sort((a, b) => a.time - b.time);
+    }
+
+    async function fetchJson(url, label, timeoutMs = 12000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(url, {
+          cache: "no-store",
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error(label + " HTTP " + response.status);
+        return await response.json();
+      } catch (error) {
+        if (controller.signal.aborted) throw new Error(label + " request timed out");
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function binance(tf) {
+      const url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=" +
+        encodeURIComponent(tf) + "&limit=" + LIMIT;
+      const bars = normalizeBinance(await fetchJson(url, "Binance"), SECONDS[tf]);
+      if (bars.length < 35) throw new Error("Insufficient completed Binance candles");
+      return bars;
+    }
+
+    async function coinbaseCandles(seconds, count) {
+      const pageSize = 250;
+      const pages = Math.min(10, Math.ceil(count / pageSize) + 1);
+      const collected = new Map();
+      let end = Date.now();
+
+      for (let page = 0; page < pages && collected.size < count; page++) {
+        const start = end - pageSize * seconds * 1000;
+        const url = "https://api.exchange.coinbase.com/products/BTC-USD/candles" +
+          "?granularity=" + seconds +
+          "&start=" + encodeURIComponent(new Date(start).toISOString()) +
+          "&end=" + encodeURIComponent(new Date(end).toISOString());
+        const rows = await fetchJson(url, "Coinbase", 15000);
+        const bars = normalizeCoinbase(rows, seconds);
+
+        for (const bar of bars) collected.set(bar[0], bar);
+        if (!rows.length) break;
+        end = start;
+        if (rows.length < 2) break;
+      }
+
+      return [...collected.values()].sort((a, b) => a[0] - b[0]).slice(-count);
+    }
+
+    async function coinbase(tf) {
+      if (!Object.prototype.hasOwnProperty.call(SECONDS, tf)) {
+        throw new Error("Unsupported timeframe: " + tf);
+      }
+
+      if (tf === "4h") {
+        const hourly = await coinbaseCandles(SECONDS["1h"], LIMIT * 4);
+        const objects = hourly.map(([time, open, high, low, close, volume]) =>
+          ({ time, open, high, low, close, volume }));
+        const bars = aggregateFourHourlyCandles(objects).map(c =>
+          [c.time, c.open, c.high, c.low, c.close, c.volume]);
+
+        if (bars.length < 35) throw new Error("Insufficient complete Coinbase 4h candles");
+        return bars.slice(-LIMIT);
+      }
+
+      const bars = await coinbaseCandles(SECONDS[tf], LIMIT);
+      if (bars.length < 35) throw new Error("Insufficient Coinbase candles");
+      return bars;
+    }
+async function getBars(tf) {
+  try {
+    return { bars: await binance(tf), source: "Binance BTCUSDT" };
+  } catch (binanceError) {
+    console.warn("Binance failed for " + tf + "; trying Coinbase:", binanceError);
+    return { bars: await coinbase(tf), source: "Coinbase BTC-USD fallback" };
   }
 }
 
+async function ticker() {
+  try {
+    const data = await fetchJson(
+      "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT",
+      "Binance ticker"
+    );
+    const values = [
+      data.lastPrice, data.priceChangePercent, data.highPrice,
+      data.lowPrice, data.volume
+    ].map(Number);
 
-async function coinbase(tf){
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),20000);
+    if (!values.every(Number.isFinite)) throw new Error("Invalid ticker response");
 
-  try{
-    let sec=SEC[tf],
-      map=new Map(),
-      end=Date.now();
+    const [price, change, high, low, volume] = values;
+    $("price").textContent = money(price);
+    $("high").textContent = money(high);
+    $("low").textContent = money(low);
+    $("volume").textContent = volume.toLocaleString("en-US", {
+      maximumFractionDigits: 3
+    }) + " BTC";
+    $("change").textContent = (change >= 0 ? "+" : "") +
+      change.toFixed(2) + "% over 24h";
+    $("change").style.color = change >= 0 ? COLORS.bull : COLORS.bear;
+    $("updated").textContent = new Date().toLocaleTimeString();
+    $("connection").textContent = "Connected";
+    $("connection").dataset.state = "normal";
+  } catch (error) {
+    $("connection").textContent = "Ticker unavailable";
+    $("connection").dataset.state = "error";
+    console.warn("Ticker update failed:", error);
+  }
+}
 
-    for(let page=0;page<4&&map.size<LIMIT;page++){
+function trueRange(bars, i) {
+  const c = bars[i];
+  if (!i) return c[2] - c[3];
+  const previousClose = bars[i - 1][4];
+  return Math.max(c[2] - c[3], Math.abs(c[2] - previousClose),
+    Math.abs(c[3] - previousClose));
+}
 
-      let start=end-280*sec*1000,
-        url="https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity="+sec+
-          "&start="+encodeURIComponent(new Date(start).toISOString())+
-          "&end="+encodeURIComponent(new Date(end).toISOString()),
+function atr(bars, i, period = 14) {
+  if (i < period) return null;
+  let total = 0;
+  for (let k = i - period + 1; k <= i; k++) total += trueRange(bars, k);
+  return total / period;
+}
 
-        r=await fetch(url,{
-          cache:"no-store",
-          signal:controller.signal
+function swings(bars) {
+  const points = [];
+  for (let i = 2; i < bars.length - 2; i++) {
+    let high = true, low = true;
+    for (let j = i - 2; j <= i + 2; j++) {
+      if (j === i) continue;
+      if (bars[j][2] >= bars[i][2]) high = false;
+      if (bars[j][3] <= bars[i][3]) low = false;
+    }
+    if (high) points.push({ type: "high", i, level: bars[i][2] });
+    if (low) points.push({ type: "low", i, level: bars[i][3] });
+  }
+  return points.sort((a, b) => a.i - b.i);
+}
+function structure(bars, points) {
+  const breaks = [];
+  for (const point of points) {
+    for (let i = point.i + 3; i < bars.length; i++) {
+      const broken = point.type === "high"
+        ? bars[i][4] > point.level
+        : bars[i][4] < point.level;
+
+      if (broken) {
+        breaks.push({
+          i, level: point.level,
+          dir: point.type === "high" ? "BULLISH" : "BEARISH"
         });
+        break;
+      }
+    }
+  }
 
-      if(!r.ok)throw Error("Coinbase HTTP "+r.status);
+  breaks.sort((a, b) => a.i - b.i);
+  let priorDirection = null;
+  for (const item of breaks) {
+    item.kind = priorDirection && priorDirection !== item.dir
+      ? "CHOCH / MSS" : "BOS";
+    priorDirection = item.dir;
+  }
 
-      let rows=await r.json();
+  const last = breaks.at(-1);
+  const bias = last && bars.length - 1 - last.i < 45 ? last.dir : "MIXED";
+  return { events: breaks, bias, last };
+}
 
-      if(!Array.isArray(rows))throw Error("Invalid Coinbase data");
+function liquidityPools(bars, points, type) {
+  const price = bars.at(-1)[4];
+  const volatility = atr(bars, bars.length - 1) || Math.max(price * .001, .01);
+  const tolerance = Math.max(price * .00012, volatility * .1);
+  const groups = [];
 
-      rows.forEach(x=>{
-        let t=+x[0]*1000;
+  for (const point of points) {
+    let group = groups.find(g => Math.abs(g.level - point.level) <= tolerance);
+    if (!group) {
+      group = { members: [], level: point.level };
+      groups.push(group);
+    }
+    group.members.push(point);
+    group.level = group.members.reduce((sum, p) => sum + p.level, 0) /
+      group.members.length;
+  }
 
-        if(t+sec*1000<=Date.now()){
-          map.set(t,[t,+x[3],+x[2],+x[1],+x[4],+x[5]]);
+  const pools = groups.map(group => {
+    const first = Math.min(...group.members.map(p => p.i));
+    const last = Math.max(...group.members.map(p => p.i));
+    let prominence = 0;
+
+    for (const point of group.members) {
+      for (let k = Math.max(0, point.i - 8);
+           k <= Math.min(bars.length - 1, point.i + 8); k++) {
+        const distance = type === "high"
+          ? point.level - bars[k][3]
+          : bars[k][2] - point.level;
+        prominence = Math.max(prominence, distance);
+      }
+    }
+
+    const equal = group.members.length > 1;
+    const score = (equal ? 5 + Math.min(3, group.members.length - 2) : 0) +
+      Math.min(5, prominence / volatility) +
+      Math.max(0, 2 - (bars.length - 1 - last) / 130);
+
+    if (!equal && prominence < volatility * 1.25) return null;
+
+    let clearance = null;
+    for (let i = last + 1; i < bars.length; i++) {
+      const candle = bars[i];
+      const threshold = Math.max(volatility * .05, group.level * .00008);
+      const through = type === "high"
+        ? candle[2] > group.level + threshold
+        : candle[3] < group.level - threshold;
+      if (!through) continue;
+
+      const closedBeyond = type === "high"
+        ? candle[4] > group.level
+        : candle[4] < group.level;
+      clearance = {
+        i,
+        kind: closedBeyond ? "close beyond" : "sweep",
+        extreme: type === "high" ? candle[2] : candle[3]
+      };
+      break;
+    }
+
+    return {
+      level: group.level, first, last, count: group.members.length,
+      equal, score, clearance
+    };
+  }).filter(Boolean);
+
+  return pools
+    .filter(p => type === "high" ? p.level > price : p.level < price)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+}
+
+function fairValueGaps(bars) {
+  const gaps = [];
+  for (let i = 2; i < bars.length; i++) {
+    const current = bars[i], earlier = bars[i - 2];
+    const volatility = atr(bars, i - 1) || 0;
+    let gap = null;
+
+    if (current[3] > earlier[2]) {
+      gap = { dir: "BULLISH", lo: earlier[2], hi: current[3] };
+    } else if (current[2] < earlier[3]) {
+      gap = { dir: "BEARISH", lo: current[2], hi: earlier[3] };
+    }
+
+    if (!gap || gap.hi - gap.lo < volatility * .18) continue;
+
+    let filledAt = null;
+    for (let j = i + 1; j < bars.length; j++) {
+      if (bars[j][3] <= gap.lo && bars[j][2] >= gap.hi) {
+        filledAt = j;
+        break;
+      }
+    }
+    gaps.push({ ...gap, i, filledAt });
+  }
+  return gaps.slice(-12);
+}
+               k <= Math.min(bars.length - 1, point.i + 8); k++) {
+            const distance = type === "high"
+              ? point.level - bars[k][3]
+              : bars[k][2] - point.level;
+            prominence = Math.max(prominence, distance);
+          }
         }
+
+        const equal = group.members.length > 1;
+        const score = (equal ? 5 + Math.min(3, group.members.length - 2) : 0) +
+          Math.min(5, prominence / volatility) +
+          Math.max(0, 2 - (bars.length - 1 - last) / 130);
+
+        if (!equal && prominence < volatility * 1.25) return null;
+
+        let clearance = null;
+        for (let i = last + 1; i < bars.length; i++) {
+          const candle = bars[i];
+          const threshold = Math.max(volatility * .05, group.level * .00008);
+          const through = type === "high"
+            ? candle[2] > group.level + threshold
+            : candle[3] < group.level - threshold;
+          if (!through) continue;
+
+          const closedBeyond = type === "high"
+            ? candle[4] > group.level
+            : candle[4] < group.level;
+          clearance = {
+            i,
+            kind: closedBeyond ? "close beyond" : "sweep",
+            extreme: type === "high" ? candle[2] : candle[3]
+          };
+          break;
+        }
+
+        return {
+          level: group.level, first, last, count: group.members.length,
+          equal, score, clearance
+        };
+      }).filter(Boolean);
+
+      return pools
+        .filter(p => type === "high" ? p.level > price : p.level < price)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+    }
+
+    function fairValueGaps(bars) {
+      const gaps = [];
+      for (let i = 2; i < bars.length; i++) {
+        const current = bars[i], earlier = bars[i - 2];
+        const volatility = atr(bars, i - 1) || 0;
+        let gap = null;
+
+        if (current[3] > earlier[2]) {
+          gap = { dir: "BULLISH", lo: earlier[2], hi: current[3] };
+        } else if (current[2] < earlier[3]) {
+          gap = { dir: "BEARISH", lo: current[2], hi: earlier[3] };
+        }
+
+        if (!gap || gap.hi - gap.lo < volatility * .18) continue;
+
+        let filledAt = null;
+        for (let j = i + 1; j < bars.length; j++) {
+          if (bars[j][3] <= gap.lo && bars[j][2] >= gap.hi) {
+            filledAt = j;
+            break;
+          }
+        }
+        gaps.push({ ...gap, i, filledAt });
+      }
+      return gaps.slice(-12);
+    }
+```I’ll keep going with the next chunk. This is the next piece after the previous block.
+
+```html
+    function orderBlocks(bars, points, gaps) {
+      const blocks = [];
+
+      for (let i = 16; i < bars.length; i++) {
+        const candle = bars[i], volatility = atr(bars, i - 1);
+        if (!volatility || Math.abs(candle[4] - candle[1]) < volatility * 1.2) continue;
+
+        const bullish = candle[4] > candle[1];
+        const direction = bullish ? "BULLISH" : "BEARISH";
+        const imbalance = gaps.some(g => g.i === i && g.dir === direction);
+        const brokeStructure = points.some(p =>
+          p.i < i && (bullish ? p.type === "high" : p.type === "low") &&
+          (bullish ? candle[4] > p.level : candle[4] < p.level)
+        );
+
+        if (!imbalance && !brokeStructure) continue;
+
+        let origin = -1;
+        for (let k = i - 1; k >= Math.max(0, i - 6); k--) {
+          const opposite = bullish
+            ? bars[k][4] < bars[k][1]
+            : bars[k][4] > bars[k][1];
+          if (opposite) { origin = k; break; }
+        }
+        if (origin < 0) continue;
+
+        const block = {
+          id: direction + "-" + bars[origin][0],
+          dir: direction,
+          i: origin,
+          created: i,
+          lo: bars[origin][3],
+          hi: bars[origin][2],
+          invalid: null,
+          retest: null
+        };
+
+        for (let j = i + 1; j < bars.length; j++) {
+          if (block.retest === null &&
+              bars[j][2] >= block.lo && bars[j][3] <= block.hi) {
+            block.retest = j;
+          }
+
+          const invalidated = bullish
+            ? bars[j][4] < block.lo
+            : bars[j][4] > block.hi;
+          if (invalidated) {
+            block.invalid = j;
+            break;
+          }
+        }
+
+        blocks.push(block);
+      }
+
+      return blocks.slice(-14);
+    }
+
+    function analyse(tf, bars) {
+      if (!Array.isArray(bars) || bars.length < 35) {
+        throw new Error("At least 35 valid candles are required for " + tf);
+      }
+
+      for (const bar of bars) {
+        if (!Array.isArray(bar) || bar.length < 6 ||
+            !bar.every(Number.isFinite) ||
+            !validOhlc(bar[1], bar[2], bar[3], bar[4], bar[5])) {
+          throw new Error("Invalid candle in " + tf + " data");
+        }
+      }
+
+      const points = swings(bars);
+      const market = structure(bars, points);
+      const gaps = fairValueGaps(bars);
+
+      return {
+        tf,
+        b: bars,
+        pivots: points,
+        st: market,
+        gaps,
+        zones: orderBlocks(bars, points, gaps),
+        liq: {
+          bsl: liquidityPools(bars, points.filter(p => p.type === "high"), "high"),
+          ssl: liquidityPools(bars, points.filter(p => p.type === "low"), "low")
+        }
+      };
+    }
+        function event(key, message) {
+      if (S.seen.has(key)) return;
+      S.seen.add(key);
+      S.events.unshift({ t: Date.now(), msg: message });
+      S.events = S.events.slice(0, 8);
+      renderEvents();
+
+      if ("Notification" in window && Notification.permission === "granted") {
+        try {
+          new Notification("BTC Hartley SMC", { body: message, tag: key });
+        } catch (error) {
+          console.warn("Notification display failed:", error);
+        }
+      }
+    }
+
+    function scanEvents(a) {
+      const recentFrom = a.b.length - 3;
+
+      for (const pool of [...a.liq.bsl, ...a.liq.ssl]) {
+        if (!pool.clearance || pool.clearance.i < recentFrom) continue;
+        const t = a.b[pool.clearance.i][0];
+        event(a.tf + "-liquidity-" + t,
+          a.tf + ": " + pool.clearance.kind + " liquidity clearance observed.");
+      }
+
+      for (const item of a.st.events) {
+        if (item.i < recentFrom) continue;
+        event(a.tf + "-structure-" + a.b[item.i][0],
+          a.tf + ": " + item.dir + " " + item.kind + " observed.");
+      }
+
+      for (const block of a.zones) {
+        if (block.retest === null || block.retest < recentFrom ||
+            block.invalid !== null) continue;
+        event(a.tf + "-retest-" + block.id + "-" + a.b[block.retest][0],
+          a.tf + ": order-block retest observed.");
+      }
+    }
+
+    function renderEvents() {
+      const container = $("events");
+      container.replaceChildren();
+
+      if (!S.events.length) {
+        const empty = document.createElement("div");
+        empty.className = "item";
+        empty.textContent = "No new events this session.";
+        container.append(empty);
+        return;
+      }
+
+      for (const entry of S.events) {
+        const item = document.createElement("div");
+        item.className = "item";
+        const when = document.createElement("span");
+        when.className = "muted";
+        when.textContent = timeLabel(entry.t);
+        item.append(when, document.createElement("br"),
+          document.createTextNode(entry.msg));
+        container.append(item);
+      }
+    }
+
+    function renderContext() {
+      for (const [tf, id] of [["4h", "h4"], ["1h", "h1"], ["15m", "m15"]]) {
+        const a = S.data[tf];
+        if (!a) continue;
+        const el = $(id);
+        el.textContent = a.st.bias === "MIXED"
+          ? "Mixed structure" : a.st.bias + " structure";
+        el.style.color = a.st.bias === "BULLISH"
+          ? COLORS.bull : a.st.bias === "BEARISH" ? COLORS.bear : COLORS.muted;
+      }
+    }
+
+    function renderChart(canvas, a) {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D context is unavailable");
+
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(320, Math.floor((rect.width || canvas.width) * dpr));
+      const height = Math.max(320, Math.floor((rect.height || canvas.height) * dpr));
+
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = COLORS.bg;
+      ctx.fillRect(0, 0, width, height);
+
+      const bars = a.b.slice(-115);
+      if (!bars.length) return;
+
+      const offset = a.b.length - bars.length;
+      const high = Math.max(...bars.map(c => c[2]));
+      const low = Math.min(...bars.map(c => c[3]));
+      const padding = Math.max((high - low) * .12, high * .00005, .01);
+      const min = low - padding, max = high + padding;
+      const left = width * .045, right = width * .87;
+      const top = height * .07, bottom = height * .86;
+      const step = (right - left) / bars.length;
+      const x = i => left + (i + .5) * step;
+      const y = price => bottom - ((price - min) / (max - min)) * (bottom - top);
+      const visible = i => i >= offset && i < offset + bars.length;
+
+      ctx.font = Math.max(10, width / 130) + "px system-ui";
+      ctx.textBaseline = "middle";
+
+      for (let n = 0; n <= 5; n++) {
+        const price = max - (max - min) * n / 5;
+        const yy = y(price);
+        ctx.strokeStyle = COLORS.grid;
+        ctx.beginPath();
+        ctx.moveTo(left, yy);
+        ctx.lineTo(right, yy);
+        ctx.stroke();
+        ctx.fillStyle = COLORS.muted;
+        ctx.textAlign = "left";
+        ctx.fillText(money(price), right + 6, yy);
+      }
+
+      for (const gap of a.gaps) {
+        if (gap.filledAt !== null || !visible(gap.i) ||
+            gap.hi < min || gap.lo > max) continue;
+        const xx = x(gap.i - offset), yy = y(gap.hi);
+        const hh = Math.max(2, y(gap.lo) - yy);
+        ctx.fillStyle = "rgba(155,101,239,.18)";
+        ctx.fillRect(xx, yy, Math.max(2, right - xx), hh);
+        ctx.strokeStyle = COLORS.fvg;
+        ctx.strokeRect(xx, yy, Math.max(2, right - xx), hh);
+      }
+
+      for (const block of a.zones) {
+        const end = block.invalid === null ? a.b.length - 1 : block.invalid;
+        if (end < offset || block.hi < min || block.lo > max) continue;
+        const startX = block.i < offset ? left : x(block.i - offset);
+        const endX = Math.max(startX + 2, x(clamp(end - offset, 0, bars.length - 1)));
+        const yTop = y(block.hi), yBottom = y(block.lo);
+        const color = block.dir === "BULLISH" ? COLORS.bull : COLORS.bear;
+
+        ctx.fillStyle = block.dir === "BULLISH"
+          ? "rgba(19,185,154,.16)" : "rgba(237,82,102,.16)";
+        ctx.fillRect(startX, yTop, endX - startX, Math.max(2, yBottom - yTop));
+        ctx.strokeStyle = color;
+        ctx.strokeRect(startX, yTop, endX - startX, Math.max(2, yBottom - yTop));
+      }
+
+      function drawLiquidity(pools, color, label) {
+        pools.filter(p => p.level >= min && p.level <= max)
+          .slice(0, 3).forEach((pool, index) => {
+            const clearIndex = pool.clearance
+              ? pool.clearance.i : a.b.length - 1;
+            const startIndex = Math.max(offset, pool.first);
+            const endIndex = clamp(clearIndex, offset, offset + bars.length - 1);
+            const startX = x(startIndex - offset);
+            const endX = Math.max(startX + 5, x(endIndex - offset));
+            const yy = y(pool.level);
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([7, 5]);
+            ctx.beginPath();
+            ctx.moveTo(startX, yy);
+            ctx.lineTo(endX, yy);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = color;
+            ctx.textAlign = "left";
+            ctx.fillText(label + (pool.equal ? " EQ" : ""),
+              Math.min(endX + 4, right - 52), yy + (index % 2 ? 11 : -10));
+
+            if (pool.clearance && visible(pool.clearance.i)) {
+              ctx.beginPath();
+              ctx.arc(x(pool.clearance.i - offset), yy, 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          });
+      }
+
+      drawLiquidity(a.liq.bsl, COLORS.bsl, "BSL");
+      drawLiquidity(a.liq.ssl, COLORS.ssl, "SSL");
+
+      const candleWidth = Math.max(2, Math.min(9, step * .56));
+      bars.forEach((c, i) => {
+        const xx = x(i);
+        const color = c[4] >= c[1] ? COLORS.bull : COLORS.bear;
+        const openY = y(c[1]), closeY = y(c[4]);
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(xx, y(c[2]));
+        ctx.lineTo(xx, y(c[3]));
+        ctx.stroke();
+        ctx.fillRect(xx - candleWidth / 2, Math.min(openY, closeY),
+          candleWidth, Math.max(2, Math.abs(closeY - openY)));
       });
 
-      if(!rows.length)break;
+      a.st.events.filter(item => visible(item.i)).slice(-4)
+        .forEach((item, index) => {
+          const xx = x(item.i - offset), yy = y(item.level);
+          ctx.strokeStyle = COLORS.bos;
+          ctx.setLineDash([6, 5]);
+          ctx.beginPath();
+          ctx.moveTo(Math.max(left, xx - width * .14), yy);
+          ctx.lineTo(xx, yy);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = COLORS.bos;
+          ctx.textAlign = "left";
+          ctx.fillText(item.kind,
+            Math.max(left, xx - width * .14) + 3,
+            yy - 10 - (index % 2) * 12);
+        });
 
-      end=start;
+      for (const pool of [...a.liq.bsl, ...a.liq.ssl]) {
+        if (!pool.clearance || !visible(pool.clearance.i)) continue;
+        const candle = bars[pool.clearance.i - offset];
+        const price = pool.clearance.kind === "sweep"
+          ? pool.clearance.extreme : candle[4];
+        ctx.fillStyle = pool.clearance.kind === "sweep" ? COLORS.bear : COLORS.bos;
+        ctx.beginPath();
+        ctx.arc(x(pool.clearance.i - offset), y(price), 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-      if(rows.length<2)break;
+      ctx.fillStyle = COLORS.muted;
+      ctx.textAlign = "center";
+      ctx.font = Math.max(9, width / 145) + "px system-ui";
+      [0, Math.floor(bars.length / 3), Math.floor(2 * bars.length / 3), bars.length - 1]
+        .forEach(i => {
+          ctx.fillText(new Date(bars[i][0]).toLocaleTimeString([], {
+            hour: "2-digit", minute: "2-digit"
+          }), x(i), height * .94);
+        });
+    }
+```Here is the next continuation after the previous chunk.
+
+```html
+    function draw(a) {
+      renderChart($("chart"), a);
+      $("chartInfo").textContent = a.tf + " · " +
+        Math.min(a.b.length, 115) + " candles · historical educational annotations.";
     }
 
-    let b=[...map.values()]
-      .sort((a,b)=>a[0]-b[0])
-      .slice(-LIMIT);
+    function renderObs(a) {
+      const observations = [];
 
-    if(b.length<35)throw Error("Insufficient fallback candles");
+      a.st.events.slice(-3).reverse().forEach(item => {
+        observations.push([
+          item.dir + " " + item.kind,
+          money(item.level) + " · " + timeLabel(a.b[item.i][0])
+        ]);
+      });
 
-    return b;
+      [...a.liq.bsl, ...a.liq.ssl].filter(pool => pool.clearance)
+        .slice(-3).reverse().forEach(pool => {
+          observations.push([
+            pool.clearance.kind === "sweep"
+              ? "Liquidity sweep" : "Close beyond liquidity",
+            (pool.equal ? "Equal level" : "Significant swing") + " · " +
+              money(pool.level) + " · " + timeLabel(a.b[pool.clearance.i][0])
+          ]);
+        });
 
-  }catch(e){
-    if(controller.signal.aborted){
-      throw Error("Coinbase request timed out after 20 seconds");
+      a.zones.filter(z => z.invalid === null).slice(-3).reverse()
+        .forEach(block => {
+          observations.push([
+            block.dir + " order block",
+            money(block.lo) + "–" + money(block.hi) +
+              (block.retest !== null ? " · retested" : " · untested")
+          ]);
+        });
+
+      $("count").textContent = observations.length + " observations";
+      const container = $("observations");
+      container.replaceChildren();
+
+      if (!observations.length) {
+        const empty = document.createElement("div");
+        empty.className = "item";
+        empty.textContent = "No prominent recent observations on this timeframe.";
+        container.append(empty);
+        return;
+      }
+
+      for (const [title, detail] of observations.slice(0, 7)) {
+        const item = document.createElement("div");
+        item.className = "item";
+        const strong = document.createElement("strong");
+        strong.textContent = title;
+        const info = document.createElement("span");
+        info.className = "muted";
+        info.textContent = detail;
+        item.append(strong, document.createElement("br"), info);
+        container.append(item);
+      }
     }
-    throw e;
-  }finally{
-    clearTimeout(timeout);
-  }
-}
 
+    function renderSelected() {
+      const tf = $("tf").value;
+      const a = S.data[tf];
 
-async function getBars(tf){
-  try{
-    let b=await binance(tf);
-    S.source="Binance BTCUSDT";
-    return b;
+      if (!a) {
+        $("chartInfo").textContent = S.errors[tf]
+          ? tf + " unavailable: " + S.errors[tf]
+          : "Waiting for " + tf + " candles…";
+        return;
+      }
 
-  }catch(e){
-    console.warn("Binance failed for "+tf+"; trying Coinbase:",e);
+      try {
+        draw(a);
+        renderObs(a);
+        if (S.errors[tf]) {
+          $("chartInfo").textContent += " STALE: showing last successful data" +
+            (S.updatedAt[tf]
+              ? " from " + new Date(S.updatedAt[tf]).toLocaleTimeString()
+              : "") + ".";
+        }
+      } catch (error) {
+        $("chartInfo").textContent = "Chart rendering failed: " +
+          (error.message || "unknown error");
+        console.error("Chart rendering failed:", error);
+      }
+    }
 
-    let b=await coinbase(tf);
-    S.source="Coinbase BTC-USD fallback";
-    return b;
-  }
-  }
-async function ticker(){try{let r=await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT",{cache:"no-store"});if(!r.ok)throw Error();let d=await r.json(),p=+d.lastPrice,ch=+d.priceChangePercent;$("price").textContent=money(p);$("high").textContent=money(+d.highPrice);$("low").textContent=money(+d.lowPrice);$("volume").textContent=(+d.volume).toLocaleString()+" BTC";$("change").textContent=(ch>=0?"+":"")+ch.toFixed(2)+"% over 24h";$("change").style.color=ch>=0?C.bull:C.bear;$("updated").textContent=new Date().toLocaleTimeString();$("connection").textContent="Connected";$("source").textContent="Active source: Binance Spot BTCUSDT. Coinbase is the candle fallback.";}catch(e){$("connection").textContent="Ticker unavailable";}}
-function tr(b,i){return i?Math.max(b[i][2]-b[i][3],Math.abs(b[i][2]-b[i-1][4]),Math.abs(b[i][3]-b[i-1][4])):b[i][2]-b[i][3];}
-function atr(b,i,n=14){if(i<n)return null;let v=0;for(let k=i-n+1;k<=i;k++)v+=tr(b,k);return v/n;}
-function swings(b){let out=[];for(let i=2;i<b.length-2;i++){let hi=true,lo=true;for(let j=i-2;j<=i+2;j++){if(i===j)continue;if(b[j][2]>=b[i][2])hi=false;if(b[j][3]<=b[i][3])lo=false;}if(hi)out.push({type:"high",i,level:b[i][2]});if(lo)out.push({type:"low",i,level:b[i][3]});}return out;}
-function structure(b,ps){let hs=ps.filter(x=>x.type==="high"),ls=ps.filter(x=>x.type==="low"),events=[];for(const p of ps){for(let i=p.i+3;i<b.length;i++){if((p.type==="high"&&b[i][4]>p.level)||(p.type==="low"&&b[i][4]<p.level)){events.push({i,level:p.level,dir:p.type==="high"?"BULLISH":"BEARISH"});break;}}}events.sort((a,b)=>a.i-b.i);let last=null,previousDir=null;for(const e of events){e.kind=previousDir&&previousDir!==e.dir?"CHOCH / MSS":"BOS";previousDir=e.dir;last=e;}let bias=last&&b.length-1-last.i<45?last.dir:"MIXED";return{hs,ls,events,bias,last};}
-function pools(b,points,type){let price=b.at(-1)[4],vol=atr(b,b.length-1)||price*.001,tol=Math.max(price*.00012,vol*.1),groups=[];for(const p of points){let g=groups.find(x=>Math.abs(x.level-p.level)<=tol);if(!g){g={members:[],level:p.level};groups.push(g);}g.members.push(p);g.level=g.members.reduce((n,x)=>n+x.level,0)/g.members.length;}return groups.map(g=>{let first=Math.min(...g.members.map(x=>x.i)),last=Math.max(...g.members.map(x=>x.i)),prom=0;for(const p of g.members){for(let k=Math.max(0,p.i-8);k<=Math.min(b.length-1,p.i+8);k++)prom=Math.max(prom,type==="high"?p.level-b[k][3]:b[k][2]-p.level);}let equal=g.members.length>1,score=(equal?5+Math.min(3,g.members.length-2):0)+Math.min(5,prom/vol)+Math.max(0,2-(b.length-1-last)/130);let cleared=null;for(let i=last+3;i<b.length;i++)if(type==="high"?b[i][2]>g.level:b[i][3]<g.level){cleared=i;break;}return{level:g.level,first,last,count:g.members.length,prom,equal,score,cleared};}).filter(p=>p.equal||p.prom>=vol*1.15);}
-function zones(b,tf){let out=[];for(let i=16;i<b.length;i++){let a=atr(b,i-1),c=b[i],range=c[2]-c[3],body=Math.abs(c[4]-c[1]);if(!a||range<=0||body<a*1.1||body/range<.58)continue;let bull=c[4]>c[1],bear=c[4]<c[1];if(!bull&&!bear)continue;let p=b[i-2],fvg=bull&&c[3]>p[2]?{lo:p[2],hi:c[3]}:bear&&c[2]<p[3]?{lo:c[2],hi:p[3]}:null;if(!fvg)continue;let oi=-1;for(let k=i-1;k>=i-6&&k>=0;k--)if(bull?b[k][4]<b[k][1]:b[k][4]>b[k][1]){oi=k;break;}if(oi<0)oi=i-1;let z={id:tf+"-"+i,dir:bull?"BULLISH":"BEARISH",lo:b[oi][3],hi:b[oi][2],oi,created:i,flo:fvg.lo,fhi:fvg.hi,tap:null,invalid:null};for(let j=i+1;j<b.length;j++){if(z.tap===null&&b[j][2]>=z.lo&&b[j][3]<=z.hi)z.tap=j;if(bull?b[j][3]<z.lo:b[j][2]>z.hi){z.invalid=j;break;}}out.push(z);}return out.slice(-24);}
-function sweeps(b,ps){let out=[];for(const p of ps){for(let i=p.i+3;i<b.length;i++){let a=atr(b,i-1)||p.level*.0003,t=Math.max(a*.05,p.level*.00008),c=b[i],hit=p.type==="high"?c[2]>p.level+t&&c[4]<p.level:c[3]<p.level-t&&c[4]>p.level;if(hit){out.push({i,level:p.level,ext:p.type==="high"?c[2]:c[3],dir:p.type==="high"?"BEARISH":"BULLISH"});break;}}}return out.sort((a,b)=>a.i-b.i);}
-function analyse(tf,b){let ps=swings(b),st=structure(b,ps),allH=pools(b,ps.filter(x=>x.type==="high"),"high"),allL=pools(b,ps.filter(x=>x.type==="low"),"low"),price=b.at(-1)[4];return{tf,b,ps,st,zones:zones(b,tf),sweeps:sweeps(b,ps),liq:{bsl:allH.filter(x=>x.level>price).sort((a,b)=>b.score-a.score),ssl:allL.filter(x=>x.level<price).sort((a,b)=>b.score-a.score)}};}
-function event(key,msg){if(S.seen.has(key))return;S.seen.add(key);S.events.unshift({t:Date.now(),msg});S.events=S.events.slice(0,8);renderEvents();if("Notification"in window&&Notification.permission==="granted")try{new Notification("BTC Hartley SMC",{body:msg,tag:key});}catch(e){}}
-function scanEvents(a){let last=a.b.length-1;for(const x of a.sweeps.filter(x=>x.i>=last-2))event(a.tf+"-sw-"+x.i,a.tf+": a swing-liquidity sweep was observed.");for(const x of a.st.events.filter(x=>x.i>=last-2))event(a.tf+"-st-"+x.i,a.tf+": "+x.dir+" "+x.kind+" was observed.");for(const z of a.zones.filter(x=>x.tap!==null&&x.tap>=last-2))event(a.tf+"-tap-"+z.id,a.tf+": an order-block retest was observed.");}
-function renderEvents(){$("events").innerHTML=S.events.length?S.events.map(e=>'<div class="item"><span class="muted">'+time(e.t)+'</span><br>'+e.msg+'</div>').join(""):'<div class="item">No new events this session.</div>';}
-function renderContext(){for(const tf of ["4h","1h","15m"]){let a=S.data[tf];if(!a)continue;let id=tf==="4h"?"h4":tf==="1h"?"h1":"m15",el=$(id);el.textContent=a.st.bias==="MIXED"?"Mixed structure":a.st.bias+" structure";el.style.color=a.st.bias==="BULLISH"?C.bull:a.st.bias==="BEARISH"?C.bear:C.muted;}}
-function draw(a){let cv=$("chart"),ctx=cv.getContext("2d"),r=cv.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),W=Math.max(320,Math.floor(r.width*dpr)),H=Math.max(320,Math.floor(r.height*dpr));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}let b=a.b.slice(-115),off=a.b.length-b.length;ctx.clearRect(0,0,W,H);ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);if(!b.length)return;let hi=Math.max(...b.map(x=>x[2])),lo=Math.min(...b.map(x=>x[3])),pad=(hi-lo)*.12||1,min=lo-pad,max=hi+pad,L=W*.045,R=W*.87,T=H*.07,B=H*.87,step=(R-L)/b.length,y=v=>B-(v-min)/(max-min)*(B-T),x=i=>L+(i+.5)*step;
-ctx.font=Math.max(11,W/120)+"px system-ui";ctx.textBaseline="middle";for(let n=0;n<=5;n++){let v=max-(max-min)*n/5,yy=y(v);ctx.strokeStyle=C.grid;ctx.beginPath();ctx.moveTo(L,yy);ctx.lineTo(R,yy);ctx.stroke();ctx.fillStyle=C.muted;ctx.textAlign="left";ctx.fillText(Math.round(v).toLocaleString(),R+7,yy);}
-for(const z of a.zones.filter(z=>z.created>=off&&z.hi>=min&&z.lo<=max&&z.invalid===null).slice(-4)){let xx=Math.max(L,x(z.oi-off)),end=z.tap===null?b.length-1:Math.max(0,z.tap-off),ex=Math.max(xx+2,x(end)),yy=y(z.hi),hh=Math.max(3,y(z.lo)-yy),col=z.dir==="BULLISH"?C.bull:C.bear;ctx.fillStyle=z.dir==="BULLISH"?"rgba(19,185,154,.22)":"rgba(237,82,102,.22)";ctx.fillRect(xx,yy,ex-xx,hh);ctx.strokeStyle=col;ctx.lineWidth=2;ctx.strokeRect(xx,yy,ex-xx,hh);ctx.fillStyle=col;ctx.font="bold "+Math.max(11,W/125)+"px system-ui";ctx.fillText(z.dir==="BULLISH"?"Bullish OB":"Bearish OB",Math.min(ex-4,xx+5),yy+Math.min(hh/2,15));if(z.fhi>=min&&z.flo<=max){let fx=x(z.created-off),fy=y(z.fhi),fh=Math.max(3,y(z.flo)-fy);ctx.fillStyle="rgba(155,101,239,.22)";ctx.fillRect(fx,fy,Math.max(2,R-fx),fh);ctx.strokeStyle=C.fvg;ctx.strokeRect(fx,fy,Math.max(2,R-fx),fh);ctx.fillStyle="#c9adff";ctx.fillText("FVG",Math.min(R-30,fx+5),fy+Math.min(fh/2,13));}}
-function drawPools(list,color){for(const p of list.filter(p=>p.level>=min&&p.level<=max).slice(0,2)){let sx=p.first<off?L:x(p.first-off),end=p.cleared===null?b.length-1:p.cleared-off;if(p.cleared!==null&&end<0)continue;end=clamp(end,0,b.length-1);let ex=Math.max(sx+2,x(end)),yy=y(p.level);ctx.strokeStyle=color;ctx.lineWidth=2;ctx.setLineDash([9,7]);ctx.beginPath();ctx.moveTo(sx,yy);ctx.lineTo(ex,yy);ctx.stroke();ctx.setLineDash([]);if(p.cleared!==null){ctx.fillStyle=color;ctx.beginPath();ctx.arc(x(end),yy,5,0,Math.PI*2);ctx.fill();}}}
-drawPools(a.liq.bsl,C.bsl);drawPools(a.liq.ssl,C.ssl);
-let cw=Math.max(2,Math.min(9,step*.56));b.forEach((c,i)=>{let xx=x(i),bull=c[4]>=c[1],col=bull?C.bull:C.bear;ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(xx,y(c[2]));ctx.lineTo(xx,y(c[3]));ctx.stroke();ctx.fillRect(xx-cw/2,y(Math.max(c[1],c[4])),cw,Math.max(2,y(Math.min(c[1],c[4]))-y(Math.max(c[1],c[4]))));});
-a.st.events.filter(e=>e.i>=off).slice(-2).forEach(e=>{let xx=x(e.i-off),yy=y(e.level);ctx.strokeStyle=C.bos;ctx.setLineDash([7,6]);ctx.beginPath();ctx.moveTo(Math.max(L,xx-W*.16),yy);ctx.lineTo(xx,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=C.bos;ctx.font="bold "+Math.max(11,W/125)+"px system-ui";ctx.fillText(e.kind,Math.max(L,xx-W*.16)+4,yy-12);});
-a.sweeps.filter(e=>e.i>=off).slice(-3).forEach(e=>{let xx=x(e.i-off),yy=y(e.ext);ctx.fillStyle=e.dir==="BULLISH"?C.ssl:C.bsl;ctx.beginPath();if(e.dir==="BULLISH"){ctx.moveTo(xx,yy+17);ctx.lineTo(xx-7,yy+29);ctx.lineTo(xx+7,yy+29);}else{ctx.moveTo(xx,yy-17);ctx.lineTo(xx-7,yy-29);ctx.lineTo(xx+7,yy-29);}ctx.closePath();ctx.fill();});
-ctx.fillStyle=C.muted;ctx.textAlign="center";ctx.font=Math.max(10,W/140)+"px system-ui";[0,Math.floor(b.length/3),Math.floor(2*b.length/3),b.length-1].forEach(i=>ctx.fillText(new Date(b[i][0]).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),x(i),H*.94));ctx.textAlign="left";$("chartInfo").textContent=a.tf+" · "+b.length+" completed candles · strongest qualifying liquidity only · historical sweep and structure annotations."; }
-function renderObs(a){let arr=[];a.st.events.slice(-3).reverse().forEach(e=>arr.push([e.dir+" "+e.kind,money(e.level)+" · "+time(a.b[e.i][0])]));a.sweeps.slice(-3).reverse().forEach(e=>arr.push(["Liquidity sweep observed",e.dir+" side · "+money(e.level)+" · "+time(a.b[e.i][0])]));a.zones.filter(z=>z.invalid===null).slice(-3).reverse().forEach(z=>arr.push([z.dir+" order block",money(z.lo)+" – "+money(z.hi)+(z.tap!==null?" · retested":" · not retested")]));$("count").textContent=arr.length+" observations";$("observations").innerHTML=arr.length?arr.slice(0,7).map(x=>'<div class="item"><strong>'+x[0]+'</strong><br><span class="muted">'+x[1]+'</span></div>').join(""):'<div class="item">No prominent recent observations on this timeframe.</div>';}
-async function refresh(){if(S.busy)return;S.busy=true;$("status").textContent="Updating…";try{let selected=$("tf").value,tfs=["4h","1h","15m","5m","1m"],res=await Promise.all(tfs.map(async tf=>[tf,await getBars(tf)]));res.forEach(([tf,b])=>S.data[tf]=analyse(tf,b));renderContext();let a=S.data[selected];draw(a);renderObs(a);tfs.forEach(tf=>scanEvents(S.data[tf]));$("status").textContent="Updated "+new Date().toLocaleTimeString();}catch(e){$("status").textContent="Data unavailable";$("chartInfo").textContent=e.message+" · Check connection and refresh.";console.error(e);}finally{S.busy=false;}}
-$("tf").addEventListener("change",()=>{let a=S.data[$("tf").value];if(a){draw(a);renderObs(a);}else refresh();});
-$("refresh").addEventListener("click",async()=>{await ticker();await refresh();});
-$("fullscreen").addEventListener("click",async()=>{let el=$("chartCard");try{if(document.fullscreenElement)await document.exitFullscreen();else if(el.requestFullscreen)await el.requestFullscreen();else $("chartInfo").textContent="Fullscreen is not supported by this browser.";}catch(e){$("chartInfo").textContent="Fullscreen could not be opened.";}});
-document.addEventListener("fullscreenchange",()=>{$("fullscreen").textContent=document.fullscreenElement?"⤢ Exit fullscreen":"⛶ Fullscreen";let a=S.data[$("tf").value];if(a)requestAnimationFrame(()=>draw(a));});
-window.addEventListener("resize",()=>{let a=S.data[$("tf").value];if(a)requestAnimationFrame(()=>draw(a));});
-$("notify").addEventListener("click",async()=>{if(!("Notification"in window)){$("permission").textContent="Not supported";return;}let p=await Notification.requestPermission();$("permission").textContent="Permission: "+p;});
-async function start(){await ticker();await refresh();if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(console.warn);}
-start();setInterval(ticker,30000);setInterval(refresh,60000);
-</script></body></html>
+    async function refresh() {
+      if (S.busy) return;
+      S.busy = true;
+      const failures = [];
+      setStatus("Updating…");
+
+      try {
+        const jobs = TIMEFRAMES.map(async tf => {
+          const requestId = (S.requestId[tf] || 0) + 1;
+          S.requestId[tf] = requestId;
+
+          try {
+            const result = await getBars(tf);
+            const analysis = analyse(tf, result.bars);
+            if (S.requestId[tf] !== requestId) return;
+
+            S.data[tf] = analysis;
+            S.source = result.source;
+            S.updatedAt[tf] = Date.now();
+            delete S.errors[tf];
+
+            renderContext();
+            try {
+              scanEvents(analysis);
+            } catch (error) {
+              console.error("Event scanning failed for " + tf + ":", error);
+            }
+
+            if ($("tf").value === tf) renderSelected();
+          } catch (error) {
+            if (S.requestId[tf] !== requestId) return;
+            S.errors[tf] = error && error.message ? error.message : "Update failed";
+            failures.push(tf);
+            console.error(tf + " update failed:", error);
+            if ($("tf").value === tf) renderSelected();
+          }
+        });
+
+        await Promise.allSettled(jobs);
+        renderContext();
+        renderSelected();
+
+        const selected = $("tf").value;
+        const stale = Boolean(S.errors[selected] && S.data[selected]);
+
+        if (failures.length) {
+          setStatus("Unavailable: " + [...new Set(failures)].join(", ") +
+            (stale ? " · selected chart is stale" : ""),
+            stale ? "stale" : "error");
+        } else {
+          setStatus("Updated " + new Date().toLocaleTimeString());
+        }
+      } catch (error) {
+        console.error("Refresh failed:", error);
+        setStatus("Update failed", "error");
+        renderSelected();
+      } finally {
+        S.busy = false;
+      }
+    }
+
+    function runSyntheticChecks() {
+      const base = Date.UTC(2025, 0, 1, 0, 0, 0);
+      const hourly = [
+        { time: base, open: 100, high: 106, low: 98, close: 104, volume: 2 },
+        { time: base + HOUR_MS, open: 104, high: 108, low: 102, close: 107, volume: 3 },
+        { time: base + 2 * HOUR_MS, open: 107, high: 110, low: 105, close: 106, volume: 4 },
+        { time: base + 3 * HOUR_MS, open: 106, high: 109, low: 101, close: 103, volume: 5 }
+      ];
+      const result = aggregateFourHourlyCandles(hourly);
+
+      if (result.length !== 1 || result[0].time !== base ||
+          result[0].open !== 100 || result[0].high !== 110 ||
+          result[0].low !== 98 || result[0].close !== 103 ||
+          result[0].volume !== 14) {
+        throw new Error("Synthetic aggregation check failed");
+      }
+
+      if (aggregateFourHourlyCandles(hourly.slice(1)).length !== 0) {
+        throw new Error("Incomplete aggregation check failed");
+      }
+
+      const bars = [];
+      for (let i = 0; i < 80; i++) {
+        const center = 100 + Math.sin(i / 4) * 4 + Math.sin(i / 11) * 2;
+        const open = center - Math.sin(i) * .8;
+        const close = center + Math.cos(i * .7) * .8;
+        bars.push([
+          base + i * HOUR_MS, open,
+          Math.max(open, close) + 1.2,
+          Math.min(open, close) - 1.2,
+          close, 10 + i
+        ]);
+      }
+
+      for (const tf of TIMEFRAMES) {
+        const a = analyse(tf, bars);
+        if (a.tf !== tf || a.b.length !== bars.length) {
+          throw new Error("Synthetic timeframe check failed: " + tf);
+        }
+      }
+
+      let rejected = false;
+      try { analyse("5m", []); } catch { rejected = true; }
+      if (!rejected) throw new Error("Empty-data check failed");
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 900;
+      canvas.height = 460;
+      renderChart(canvas, analyse("5m", bars));
+      console.info("Synthetic checks passed.");
+    }
+
+    $("tf").addEventListener("change", () => {
+      if (S.data[$("tf").value]) renderSelected();
+      else refresh();
+    });
+
+    $("refresh").addEventListener("click", async () => {
+      await ticker();
+      await refresh();
+    });
+
+    $("fullscreen").addEventListener("click", async () => {
+      const card = $("chartCard");
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (card.requestFullscreen) await card.requestFullscreen();
+        else $("chartInfo").textContent = "Fullscreen is not supported by this browser.";
+      } catch (error) {
+        $("chartInfo").textContent = "Fullscreen could not be opened.";
+        console.warn("Fullscreen request failed:", error);
+      }
+    });
+
+    document.addEventListener("fullscreenchange", () => {
+      $("fullscreen").textContent = document.fullscreenElement
+        ? "⤢ Exit fullscreen" : "⛶ Fullscreen";
+      requestAnimationFrame(renderSelected);
+    });
+
+    window.addEventListener("resize", () => requestAnimationFrame(renderSelected));
+
+    $("notify").addEventListener("click", async () => {
+      if (!("Notification" in window)) {
+        $("permission").textContent = "Not supported";
+        return;
+      }
+
+      try {
+        $("permission").textContent =
+          "Permission: " + await Notification.requestPermission();
+      } catch (error) {
+        $("permission").textContent = "Permission request failed";
+        console.warn("Notification permission request failed:", error);
+      }
+    });
+
+    async function start() {
+      try {
+        runSyntheticChecks();
+      } catch (error) {
+        console.error("Synthetic checks failed:", error);
+        setStatus("Synthetic check failed", "error");
+      }
+
+      await ticker();
+      await refresh();
+
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("./sw.js").catch(error =>
+          console.warn("Service worker registration failed:", error));
+      }
+    }
+
+    start();
+    setInterval(ticker, 30000);
+    setInterval(refresh, 60000);
+  </script>
+</body>
+</html>
