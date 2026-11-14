@@ -1,25 +1,15 @@
 {
-  "name": "BTC Hartley SMC",
-  "short_name": "BTC Hartley SMC",
-  "id": "./",
-  "start_url": "./",
-  "scope": "./",
-  "display": "standalone",
-  "background_color": "#0b1118",
-  "theme_color": "#101820",
-  "description": "Independent BTC-USD market monitor and SMC alert app.",
-  "icons": [
-    {
-      "src": "./hartley-smc-icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./hartley-smc-icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    }
+  "name":"BTC Hartley SMC",
+  "short_name":"Hartley SMC",
+  "id":"./",
+  "start_url":"./",
+  "scope":"./",
+  "display":"standalone",
+  "background_color":"#080d16",
+  "theme_color":"#080d16",
+  "description":"BTC market-structure and SMC educational chart monitor.",
+  "icons":[
+    {"src":"./hartley-smc-icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"./hartley-smc-icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"}
   ]
 }
