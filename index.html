@@ -324,17 +324,46 @@ function setupStates(selected, m15, m5) {
 }
 function renderEvents(){const box=$("events");box.replaceChildren();if(!S.events.length){const d=document.createElement("div");d.className="item";d.textContent="No new events this session.";box.append(d);return;}
  for(const e of S.events){const d=document.createElement("div");d.className="item";d.textContent=timeLabel(e.t)+" · "+e.msg;box.append(d);}}
-function scanQualifiedSetups(){
- const m15=S.data["15m"],m5=S.data["5m"];if(!m15)return;
- for(const tf of ["5m","15m"]){const a=S.data[tf];if(!a)continue;
-  for(const s of setupStates(a,m15,m5)){
-   if(!s.state.startsWith("QUALIFIED"))continue;
-   const tapTime=a.bars[s.ob.firstTap].time;
-   emit("qualified-"+tf+"-"+s.ob.id,tf+" QUALIFIED "+s.ob.dir+" OB retest after M15 "+(s.sweep?s.sweep.type:"")+" sweep. Target: "+(s.target?fmt(s.target.level):"not identified")+".");
-   if(s.confirmEvent)emit("m5-confirm-"+s.ob.id,"M5 "+s.confirm+" for "+tf+" OB setup.");
+
+function scanQualifiedSetups() {
+  const m5 = S.data["5m"];
+
+  // Scan every timeframe independently.
+  for (const tf of ["5m", "15m", "1h", "4h"]) {
+    const a = S.data[tf];
+    if (!a) continue;
+
+    // Each timeframe uses its own liquidity and OB analysis.
+    for (const s of setupStates(a, null, m5)) {
+      if (!s.state.startsWith("QUALIFIED")) continue;
+
+      if (s.ob.firstTap === null) continue;
+
+      const tapTime = a.bars[s.ob.firstTap].time;
+
+      emit(
+        "qualified-" + tf + "-" + s.ob.id,
+        "BTCUSD | " + tf.toUpperCase() +
+        " | QUALIFIED " + s.ob.dir +
+        " OB retest after " + tf.toUpperCase() +
+        " " + (s.sweep ? s.sweep.type : "") +
+        " liquidity sweep. Target: " +
+        (s.target ? fmt(s.target.level) : "not identified") + "."
+      );
+
+      // M5 confirmation is a separate alert.
+      if (s.confirmEvent) {
+        emit(
+          "m5-confirm-" + tf + "-" + s.ob.id,
+          "BTCUSD | M5 | CONFIRMATION for " +
+          tf.toUpperCase() + " OB setup: " +
+          s.confirm + "."
+        );
+      }
+    }
   }
- }
 }
+
 function renderContext(){
  const h=h4Bias(S.data["4h"]);$("h4").textContent=h.bias;$("h4").style.color=h.bias==="BULLISH"?C.bull:h.bias==="BEARISH"?C.bear:C.muted;$("biasInfo").textContent=h.reason;
  const one=S.data["1h"];if(one){$("h1").textContent=one.st.bias+" structure";$("h1").style.color=one.st.bias==="BULLISH"?C.bull:one.st.bias==="BEARISH"?C.bear:C.muted;}
