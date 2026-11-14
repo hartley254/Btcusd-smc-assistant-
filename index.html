@@ -51,9 +51,113 @@ const money=n=>Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionD
 const time=t=>new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 const clamp=(value,min,max)=>Math.min(Math.max(value,min),max);
 function normalize(rows,sec){return rows.filter(r=>+r[6]+sec*1000<=Date.now()).map(r=>[+r[0],+r[1],+r[2],+r[3],+r[4],+r[5]]).filter(c=>c.every(Number.isFinite)).sort((a,b)=>a[0]-b[0]);}
-async function binance(tf){let r=await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval="+tf+"&limit="+LIMIT,{cache:"no-store"});if(!r.ok)throw Error("Binance HTTP "+r.status);let b=normalize(await r.json(),SEC[tf]);if(b.length<35)throw Error("Insufficient completed candles");return b;}
-async function coinbase(tf){let sec=SEC[tf],map=new Map(),end=Date.now();for(let page=0;page<4&&map.size<LIMIT;page++){let start=end-280*sec*1000,url="https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity="+sec+"&start="+encodeURIComponent(new Date(start).toISOString())+"&end="+encodeURIComponent(new Date(end).toISOString()),r=await fetch(url,{cache:"no-store"});if(!r.ok)throw Error("Coinbase HTTP "+r.status);let rows=await r.json();if(!Array.isArray(rows))throw Error("Invalid Coinbase data");rows.forEach(x=>{let t=+x[0]*1000;if(t+sec*1000<=Date.now())map.set(t,[t,+x[3],+x[2],+x[1],+x[4],+x[5]]);});if(!rows.length)break;end=start;if(rows.length<2)break;}let b=[...map.values()].sort((a,b)=>a[0]-b[0]).slice(-LIMIT);if(b.length<35)throw Error("Insufficient fallback candles");return b;}
-async function getBars(tf){try{let b=await binance(tf);S.source="Binance BTCUSDT";return b;}catch(e){let b=await coinbase(tf);S.source="Coinbase BTC-USD fallback";return b;}}
+async function binance(tf){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),12000);
+
+  try{
+    let r=await fetch(
+      "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval="+tf+"&limit="+LIMIT,
+      {
+        cache:"no-store",
+        signal:controller.signal
+      }
+    );
+
+    if(!r.ok)throw Error("Binance HTTP "+r.status);
+
+    let b=normalize(await r.json(),SEC[tf]);
+
+    if(b.length<35)throw Error("Insufficient completed candles");
+
+    return b;
+
+  }catch(e){
+    if(controller.signal.aborted){
+      throw Error("Binance request timed out after 12 seconds");
+    }
+    throw e;
+  }finally{
+    clearTimeout(timeout);
+  }
+}
+
+
+async function coinbase(tf){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),20000);
+
+  try{
+    let sec=SEC[tf],
+      map=new Map(),
+      end=Date.now();
+
+    for(let page=0;page<4&&map.size<LIMIT;page++){
+
+      let start=end-280*sec*1000,
+        url="https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity="+sec+
+          "&start="+encodeURIComponent(new Date(start).toISOString())+
+          "&end="+encodeURIComponent(new Date(end).toISOString()),
+
+        r=await fetch(url,{
+          cache:"no-store",
+          signal:controller.signal
+        });
+
+      if(!r.ok)throw Error("Coinbase HTTP "+r.status);
+
+      let rows=await r.json();
+
+      if(!Array.isArray(rows))throw Error("Invalid Coinbase data");
+
+      rows.forEach(x=>{
+        let t=+x[0]*1000;
+
+        if(t+sec*1000<=Date.now()){
+          map.set(t,[t,+x[3],+x[2],+x[1],+x[4],+x[5]]);
+        }
+      });
+
+      if(!rows.length)break;
+
+      end=start;
+
+      if(rows.length<2)break;
+    }
+
+    let b=[...map.values()]
+      .sort((a,b)=>a[0]-b[0])
+      .slice(-LIMIT);
+
+    if(b.length<35)throw Error("Insufficient fallback candles");
+
+    return b;
+
+  }catch(e){
+    if(controller.signal.aborted){
+      throw Error("Coinbase request timed out after 20 seconds");
+    }
+    throw e;
+  }finally{
+    clearTimeout(timeout);
+  }
+}
+
+
+async function getBars(tf){
+  try{
+    let b=await binance(tf);
+    S.source="Binance BTCUSDT";
+    return b;
+
+  }catch(e){
+    console.warn("Binance failed for "+tf+"; trying Coinbase:",e);
+
+    let b=await coinbase(tf);
+    S.source="Coinbase BTC-USD fallback";
+    return b;
+  }
+  }
 async function ticker(){try{let r=await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT",{cache:"no-store"});if(!r.ok)throw Error();let d=await r.json(),p=+d.lastPrice,ch=+d.priceChangePercent;$("price").textContent=money(p);$("high").textContent=money(+d.highPrice);$("low").textContent=money(+d.lowPrice);$("volume").textContent=(+d.volume).toLocaleString()+" BTC";$("change").textContent=(ch>=0?"+":"")+ch.toFixed(2)+"% over 24h";$("change").style.color=ch>=0?C.bull:C.bear;$("updated").textContent=new Date().toLocaleTimeString();$("connection").textContent="Connected";$("source").textContent="Active source: Binance Spot BTCUSDT. Coinbase is the candle fallback.";}catch(e){$("connection").textContent="Ticker unavailable";}}
 function tr(b,i){return i?Math.max(b[i][2]-b[i][3],Math.abs(b[i][2]-b[i-1][4]),Math.abs(b[i][3]-b[i-1][4])):b[i][2]-b[i][3];}
 function atr(b,i,n=14){if(i<n)return null;let v=0;for(let k=i-n+1;k<=i;k++)v+=tr(b,k);return v/n;}
