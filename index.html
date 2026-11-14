@@ -221,7 +221,7 @@ function emit(key,msg){
  if("Notification"in window&&Notification.permission==="granted"){try{new Notification("BTC Hartley SMC",{body:msg,tag:key});}catch(e){console.warn(e);}}
 }
 
-function setupStates(selected, m5) {
+function setupStates(selected, m15, m5) {
   if (!selected) return [];
 
   // Each timeframe uses only its own liquidity sweeps.
