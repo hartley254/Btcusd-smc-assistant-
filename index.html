@@ -215,36 +215,107 @@ function h4Bias(a){
   }}
  }
  return {bias:"NEUTRAL",reason:"No recent H4 sweep-close-back plus subsequent directional displacement.",sweep:null,displacement:null};
-}
-function setupStates(selected,m15,m5){
- if(!selected||!m15)return [];
- const sweeps=m15.liq.events.filter(e=>e.kind==="sweep"),out=[];
- for(const ob of selected.zones){
-  const tap=ob.firstTap,dir=ob.dir,needed=dir==="BULLISH"?"SSL":"BSL";
-  const eligible=sweeps.filter(e=>e.type===needed&&e.time<=(tap===null?Date.now():selected.bars[tap].time));
-  const prior=eligible.filter(e=>e.time<=(tap===null?Date.now():selected.bars[ob.created].time)).at(-1);
-  const between=eligible.filter(e=>e.time>selected.bars[ob.created].time).at(-1);
-  const sweep=prior||between;
-  const isTapped=tap!==null,valid=ob.invalid===null||tap!==null&&ob.invalid>tap;
-  let state="OB detected";
-  if(sweep)state="Required "+needed+" liquidity swept";
-  if(isTapped&&sweep&&valid)state="QUALIFIED · first OB wick retest";
-  else if(isTapped&&!sweep)state="Tapped · no qualifying prior M15 sweep";
-  else if(ob.invalid!==null&&tap===null)state="Invalidated before retest";
-  let confirm="Not yet confirmed",confirmEvent=null;
-  if(isTapped&&m5){const tapTime=selected.bars[tap].time;confirmEvent=m5.st.events.find(e=>m5.bars[e.i].time>=tapTime&&e.dir===dir);if(confirmEvent)confirm=dir+" "+confirmEvent.kind+" after retest";}
-  const targets=dir==="BULLISH"?selected.liq.levels.filter(p=>p.type==="high"&&p.level>ob.hi):selected.liq.levels.filter(p=>p.type==="low"&&p.level<ob.lo);
-  targets.sort((x,y)=>dir==="BULLISH"?x.level-y.level:y.level-x.level);
-  const target=targets[0]||null;
-  out.push({ob,sweep,state,confirm,confirmEvent,target});
- }
- return out;
-}
+
 function emit(key,msg){
  if(S.seen.has(key))return;S.seen.add(key);S.events.unshift({t:Date.now(),msg});S.events=S.events.slice(0,12);renderEvents();
  if("Notification"in window&&Notification.permission==="granted"){try{new Notification("BTC Hartley SMC",{body:msg,tag:key});}catch(e){console.warn(e);}}
 }
-function scanEvents(a){
+
+function setupStates(selected, m5) {
+  if (!selected) return [];
+
+  // Each timeframe uses only its own liquidity sweeps.
+  const sweeps = selected.liq.events.filter(
+    e => e.kind === "sweep"
+  );
+
+  const out = [];
+
+  for (const ob of selected.zones) {
+    const tap = ob.firstTap;
+    const dir = ob.dir;
+    const needed = dir === "BULLISH" ? "SSL" : "BSL";
+
+    const tapTime = tap === null
+      ? Infinity
+      : selected.bars[tap].time;
+
+    // A sweep must happen before the first OB retest.
+    const eligible = sweeps.filter(e =>
+      e.type === needed && e.time < tapTime
+    );
+
+    // The sweep may happen before or after OB creation,
+    // but it must happen before the first retest.
+    const sweep = eligible.length
+      ? eligible[eligible.length - 1]
+      : null;
+
+    const isTapped = tap !== null;
+
+    const valid = ob.invalid === null ||
+      (isTapped && ob.invalid > tap);
+
+    let state = "OB detected";
+
+    if (sweep) {
+      state = "Required " + needed + " liquidity swept";
+    }
+
+    if (isTapped && sweep && valid) {
+      state = "QUALIFIED · first OB wick retest";
+    } else if (isTapped && !sweep) {
+      state = "Tapped · no qualifying " +
+        selected.tf + " sweep";
+    } else if (ob.invalid !== null && tap === null) {
+      state = "Invalidated before retest";
+    }
+
+    // M5 confirmation is displayed separately.
+    let confirm = "Not yet confirmed";
+    let confirmEvent = null;
+
+    if (isTapped && m5) {
+      const firstTapTime = selected.bars[tap].time;
+
+      confirmEvent = m5.st.events.find(e =>
+        m5.bars[e.i].time >= firstTapTime &&
+        e.dir === dir
+      );
+
+      if (confirmEvent) {
+        confirm = dir + " " + confirmEvent.kind +
+          " after retest";
+      }
+    }
+
+    // Target liquidity comes from this timeframe only.
+    const targets = dir === "BULLISH"
+      ? selected.liq.levels.filter(p =>
+          p.type === "high" && p.level > ob.hi)
+      : selected.liq.levels.filter(p =>
+          p.type === "low" && p.level < ob.lo);
+
+    targets.sort((x, y) =>
+      dir === "BULLISH"
+        ? x.level - y.level
+        : y.level - x.level
+    );
+
+    out.push({
+      ob,
+      sweep,
+      state,
+      confirm,
+      confirmEvent,
+      target: targets[0] || null
+    });
+  }
+
+  return out;
+}
+ 
+ function scanEvents(a){
  const recent=a.bars.length-3;
  for(const e of a.liq.events)if(e.i>=recent)emit(a.tf+"-liq-"+e.time,a.tf+" "+e.type+" "+e.kind+" at "+fmt(e.level));
  for(const e of a.st.events)if(e.i>=recent)emit(a.tf+"-structure-"+a.bars[e.i].time,a.tf+" "+e.dir+" "+e.kind);
