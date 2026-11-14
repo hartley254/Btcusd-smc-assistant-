@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#080d16">
 <meta name="description" content="BTCUSD SMC market structure and alert monitor">
 <title>BTC Hartley SMC</title>
@@ -23,7 +24,6 @@ select,button{min-height:42px;padding:9px 12px;border:1px solid #52677d;border-r
 footer{padding:18px;color:var(--muted);text-align:center;font-size:10px}
 @media(min-width:700px){.stats{grid-template-columns:repeat(4,minmax(0,1fr))}.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.card{padding:18px}}
 @media(max-width:420px){main{padding:9px}.card{padding:12px}.price{font-size:27px}}
-@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
@@ -68,7 +68,7 @@ const TF=["1m","5m","15m","1h","4h"],SEC={"1m":60,"5m":300,"15m":900,"1h":3600,"
 const LIMIT=420,HOUR=3600000,FOUR_HOURS=14400000;
 const C={bg:"#080e17",grid:"#263649",muted:"#9aabba",bull:"#13b99a",bear:"#ed5266",fvg:"#9b65ef",bsl:"#f05a66",ssl:"#24cf83",bos:"#9ce6b5",warn:"#f0bc63"};
 const CFG={pivotLeft:2,pivotRight:2,atrPeriod:14,displacementAtr:1.15,closeStrength:.72,fvgMinAtr:.12,sweepBufferAtr:.015,liquidityToleranceAtr:.12,maxSwingAge:380};
-const S={data:Object.create(null),events:[],seen:new Set(),errors:Object.create(null),updated:Object.create(null),busy:false,source:""};
+const S={data:Object.create(null),events:[],seen:new Set(),errors:Object.create(null),updated:Object.create(null),busy:false};
 const fmt=n=>Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:2}):"—";
 const timeLabel=t=>new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -111,7 +111,7 @@ async function getBinance(tf){const u="https://api.binance.com/api/v3/klines?sym
 async function getBars(tf){try{return {bars:await getCoinbase(tf),source:"Coinbase BTC-USD"};}catch(e){console.warn("Coinbase failed; trying Binance",e);return {bars:await getBinance(tf),source:"Binance BTCUSDT fallback"};}}
 async function ticker(){
  try{let d;try{d=await fetchJSON("https://api.exchange.coinbase.com/products/BTC-USD/stats","Coinbase ticker");$("source").textContent="Primary: Coinbase BTC-USD · Binance BTCUSDT fallback. Spot prices may differ from broker feeds.";}
- catch(e){const b=await fetchJSON("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT","Binance ticker");d={last:b.lastPrice,high:b.highPrice,low:b.lowPrice,volume:b.volume,open:0};$("source").textContent="Ticker source: Binance BTCUSDT fallback. Spot prices may differ from broker feeds.";}
+ catch(e){const b=await fetchJSON("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT","Binance ticker");d={last:b.lastPrice,high:b.highPrice,low:b.lowPrice,volume:b.volume,open:b.openPrice};$("source").textContent="Ticker source: Binance BTCUSDT fallback. Spot prices may differ from broker feeds.";}
  const last=Number(d.last),high=Number(d.high),low=Number(d.low),volume=Number(d.volume),open=Number(d.open),change=open>0?(last-open)/open*100:null;
  if(![last,high,low,volume].every(Number.isFinite))throw Error("Invalid ticker values");
  $("price").textContent=fmt(last);$("high").textContent=fmt(high);$("low").textContent=fmt(low);$("volume").textContent=volume.toLocaleString("en-US",{maximumFractionDigits:3})+" BTC";
@@ -131,33 +131,25 @@ function pivots(bars){
  return out.sort((a,b)=>a.confirmed-b.confirmed);
 }
 function structure(bars,pts){
- const highs=pts.filter(p=>p.type==="high"),lows=pts.filter(p=>p.type==="low"),events=[];let lastDir=null;
- const candidates=[];
+ const highs=pts.filter(p=>p.type==="high"),lows=pts.filter(p=>p.type==="low"),events=[];let lastDir=null;const candidates=[];
  for(const p of pts){for(let i=p.confirmed+1;i<bars.length;i++){if(p.type==="high"?bars[i].c>p.level:bars[i].c<p.level){candidates.push({i,level:p.level,dir:p.type==="high"?"BULLISH":"BEARISH",pivot:p});break;}}}
  candidates.sort((a,b)=>a.i-b.i);
  for(const e of candidates){const kind=lastDir&&lastDir!==e.dir?"CHOCH / MSS":"BOS";events.push({...e,kind});lastDir=e.dir;}
- const recent=events.at(-1),bias=recent&&bars.length-1-recent.i<=Math.max(12,Math.floor(bars.length*.22))?recent.dir:"MIXED";
- const labels=[];
+ const recent=events.at(-1),bias=recent&&bars.length-1-recent.i<=Math.max(12,Math.floor(bars.length*.22))?recent.dir:"MIXED",labels=[];
  for(let i=1;i<highs.length;i++)labels.push({type:"high",i:highs[i].i,label:highs[i].level>highs[i-1].level?"HH":"LH"});
  for(let i=1;i<lows.length;i++)labels.push({type:"low",i:lows[i].i,label:lows[i].level>lows[i-1].level?"HL":"LL"});
  return {events,bias,last:recent,labels:labels.sort((a,b)=>a.i-b.i),highs,lows};
 }
 function liquidityEvents(bars,pts){
- const events=[],levels=[];
- const vol=atr(bars,bars.length-1)||bars.at(-1).c*.001;
- for(const type of ["high","low"]){
-  const ps=pts.filter(p=>p.type===type);const groups=[];
+ const events=[],levels=[],vol=atr(bars,bars.length-1)||bars.at(-1).c*.001;
+ for(const type of ["high","low"]){const ps=pts.filter(p=>p.type===type),groups=[];
   for(const p of ps){let g=groups.find(x=>Math.abs(x.level-p.level)<=Math.max(vol*CFG.liquidityToleranceAtr,p.level*.0001));if(!g){g={members:[],level:p.level};groups.push(g);}g.members.push(p);g.level=g.members.reduce((s,x)=>s+x.level,0)/g.members.length;}
   for(const g of groups){const last=Math.max(...g.members.map(p=>p.confirmed));if(bars.length-1-last>CFG.maxSwingAge)continue;
-   const eq=g.members.length>1;
-   levels.push({type,level:g.level,first:Math.min(...g.members.map(p=>p.i)),last,count:g.members.length,equal:eq,clearance:null});
+   const eq=g.members.length>1;levels.push({type,level:g.level,first:Math.min(...g.members.map(p=>p.i)),last,count:g.members.length,equal:eq,clearance:null});
    const buffer=Math.max(vol*CFG.sweepBufferAtr,g.level*.000025);
    for(let i=last+1;i<bars.length;i++){const b=bars[i],breach=type==="high"?b.h>g.level+buffer:b.l<g.level-buffer;if(!breach)continue;
-    const closeBeyond=type==="high"?b.c>g.level:b.c<g.level;
-    const swept=type==="high"?b.c<g.level:b.c>g.level;
-    const kind=swept?"sweep":closeBeyond?"close beyond":"wick through";
-    const ev={type:type==="high"?"BSL":"SSL",level:g.level,i,time:b.time,kind,extreme:type==="high"?b.h:b.l,equal:eq};
-    events.push(ev);levels.at(-1).clearance=ev;break;
+    const closeBeyond=type==="high"?b.c>g.level:b.c<g.level,swept=type==="high"?b.c<g.level:b.c>g.level,kind=swept?"sweep":closeBeyond?"close beyond":"wick through";
+    const ev={type:type==="high"?"BSL":"SSL",level:g.level,i,time:b.time,kind,extreme:type==="high"?b.h:b.l,equal:eq};events.push(ev);levels.at(-1).clearance=ev;break;
    }
   }
  }
@@ -166,35 +158,28 @@ function liquidityEvents(bars,pts){
 function fvgList(bars){
  const out=[];for(let i=2;i<bars.length;i++){const a=bars[i-2],b=bars[i],vol=atr(bars,i-1)||0;let g=null;
   if(b.l>a.h)g={dir:"BULLISH",lo:a.h,hi:b.l};else if(b.h<a.l)g={dir:"BEARISH",lo:b.h,hi:a.l};
-  if(!g||g.hi-g.lo<vol*CFG.fvgMinAtr)continue;
-  let filledAt=null;for(let j=i+1;j<bars.length;j++){if(bars[j].l<=g.lo&&bars[j].h>=g.hi){filledAt=j;break;}}
+  if(!g||g.hi-g.lo<vol*CFG.fvgMinAtr)continue;let filledAt=null;
+  for(let j=i+1;j<bars.length;j++){if(bars[j].l<=g.lo&&bars[j].h>=g.hi){filledAt=j;break;}}
   out.push({...g,i,created:i,filledAt});
  }return out;
 }
 function displacementAt(bars,i,dir,gaps,structEvents){
- const b=bars[i],vol=atr(bars,i-1);if(!vol)return false;
- const range=b.h-b.l,body=Math.abs(b.c-b.o);if(range<=0||body<vol*CFG.displacementAtr)return false;
- const bullishClose=(b.c-b.l)/range,bearishClose=(b.h-b.c)/range;
- const directional=dir==="BULLISH"?b.c>b.o&&bullishClose>=CFG.closeStrength:b.c<b.o&&bearishClose>=CFG.closeStrength;
- const gap=gaps.some(g=>g.i===i&&g.dir===dir),brk=structEvents.some(e=>e.i===i&&e.dir===dir);
- return directional&&(gap||brk);
+ const b=bars[i],vol=atr(bars,i-1);if(!vol)return false;const range=b.h-b.l,body=Math.abs(b.c-b.o);if(range<=0||body<vol*CFG.displacementAtr)return false;
+ const bull=(b.c-b.l)/range,bear=(b.h-b.c)/range,directional=dir==="BULLISH"?b.c>b.o&&bull>=CFG.closeStrength:b.c<b.o&&bear>=CFG.closeStrength;
+ const gap=gaps.some(g=>g.i===i&&g.dir===dir),brk=structEvents.some(e=>e.i===i&&e.dir===dir);return directional&&(gap||brk);
 }
-function detectOrderBlocks(bars,pts,gaps,st){
+function detectOrderBlocks(bars,gaps,st){
  const blocks=[];
  for(let i=CFG.atrPeriod+3;i<bars.length;i++){
   const dir=bars[i].c>bars[i].o?"BULLISH":bars[i].c<bars[i].o?"BEARISH":null;if(!dir||!displacementAt(bars,i,dir,gaps,st.events))continue;
-  let origin=-1;
-  for(let k=i-1;k>=Math.max(0,i-6);k--){const opposite=dir==="BULLISH"?bars[k].c<bars[k].o:bars[k].c>bars[k].o;if(opposite){origin=k;break;}}
-  const hasFvg=gaps.some(g=>g.i===i&&g.dir===dir);
-  if(origin<0&&hasFvg)origin=i-1;
-  if(origin<0)continue;
+  let origin=-1;for(let k=i-1;k>=Math.max(0,i-6);k--){const opposite=dir==="BULLISH"?bars[k].c<bars[k].o:bars[k].c>bars[k].o;if(opposite){origin=k;break;}}
+  const hasFvg=gaps.some(g=>g.i===i&&g.dir===dir);if(origin<0&&hasFvg)origin=i-1;if(origin<0)continue;
   const ob={id:dir+"-"+bars[origin].time+"-"+bars[i].time,dir,origin,created:i,time:bars[origin].time,createdTime:bars[i].time,lo:bars[origin].l,hi:bars[origin].h,firstTap:null,invalid:null,hasFvg};
-  for(let j=i+1;j<bars.length;j++){
-   const b=bars[j];
-   const touched=b.h>=ob.lo&&b.l<=ob.hi;
-   const invalid=dir==="BULLISH"?b.c<ob.lo:b.c>ob.hi;
-   if(touched){ob.firstTap=j;break;}
+  for(let j=i+1;j<bars.length;j++){const b=bars[j],invalid=dir==="BULLISH"?b.c<ob.lo:b.c>ob.hi,touched=b.h>=ob.lo&&b.l<=ob.hi;
+   // Invalidation wins if one candle both overlaps the zone and closes through its far boundary.
    if(invalid){ob.invalid=j;break;}
+   // Record the first wick touch, but keep monitoring later candles for invalidation.
+   if(touched&&ob.firstTap===null)ob.firstTap=j;
   }
   blocks.push(ob);
  }
@@ -203,171 +188,78 @@ function detectOrderBlocks(bars,pts,gaps,st){
 function analyse(tf,bars){
  if(!Array.isArray(bars)||bars.length<35)throw Error("At least 35 completed candles required for "+tf);
  for(const b of bars)if(![b.time,b.o,b.h,b.l,b.c,b.v].every(Number.isFinite)||!validOHLC(b.o,b.h,b.l,b.c,b.v))throw Error("Invalid OHLC candle in "+tf);
- const pts=pivots(bars),st=structure(bars,pts),liq=liquidityEvents(bars,pts),gaps=fvgList(bars),zones=detectOrderBlocks(bars,pts,gaps,st);
+ const pts=pivots(bars),st=structure(bars,pts),liq=liquidityEvents(bars,pts),gaps=fvgList(bars),zones=detectOrderBlocks(bars,gaps,st);
  return {tf,bars,pts,st,liq,gaps,zones};
 }
 function h4Bias(a){
  if(!a)return {bias:"WAITING",reason:"Waiting for H4 candles.",sweep:null,displacement:null};
  const ev=a.liq.events.filter(e=>e.kind==="sweep");
  for(let n=ev.length-1;n>=0;n--){const e=ev[n],dir=e.type==="SSL"?"BULLISH":"BEARISH";
-  for(let i=e.i+1;i<a.bars.length;i++){if(displacementAt(a.bars,i,dir,a.gaps,a.st.events)){
-   return {bias:dir,reason:dir+" H4 "+e.type+" sweep at "+fmt(e.level)+" followed by displacement.",sweep:e,displacement:i};
-  }}
+  for(let i=e.i+1;i<a.bars.length;i++){
+   // H4 bias requires the sweep, a same-direction structure break, and displacement.
+   const structureBreak=a.st.events.some(x=>x.i===i&&x.dir===dir);
+   if(structureBreak&&displacementAt(a.bars,i,dir,a.gaps,a.st.events))
+    return {bias:dir,reason:dir+" H4 "+e.type+" sweep at "+fmt(e.level)+" followed by a same-direction structure break and displacement.",sweep:e,displacement:i};
+  }
  }
- return {bias:"NEUTRAL",reason:"No recent H4 sweep-close-back plus subsequent directional displacement.",sweep:null,displacement:null};
-
+ return {bias:"NEUTRAL",reason:"No H4 sweep-close-back plus subsequent directional displacement.",sweep:null,displacement:null};
+}
 function emit(key,msg){
  if(S.seen.has(key))return;S.seen.add(key);S.events.unshift({t:Date.now(),msg});S.events=S.events.slice(0,12);renderEvents();
  if("Notification"in window&&Notification.permission==="granted"){try{new Notification("BTC Hartley SMC",{body:msg,tag:key});}catch(e){console.warn(e);}}
 }
-
-function setupStates(selected, m15, m5) {
-  if (!selected) return [];
-
-  // Each timeframe uses only its own liquidity sweeps.
-  const sweeps = selected.liq.events.filter(
-    e => e.kind === "sweep"
-  );
-
-  const out = [];
-
-  for (const ob of selected.zones) {
-    const tap = ob.firstTap;
-    const dir = ob.dir;
-    const needed = dir === "BULLISH" ? "SSL" : "BSL";
-
-    const tapTime = tap === null
-      ? Infinity
-      : selected.bars[tap].time;
-
-    // A sweep must happen before the first OB retest.
-    const eligible = sweeps.filter(e =>
-      e.type === needed && e.time < tapTime
-    );
-
-    // The sweep may happen before or after OB creation,
-    // but it must happen before the first retest.
-    const sweep = eligible.length
-      ? eligible[eligible.length - 1]
-      : null;
-
-    const isTapped = tap !== null;
-
-    const valid = ob.invalid === null ||
-      (isTapped && ob.invalid > tap);
-
-    let state = "OB detected";
-
-    if (sweep) {
-      state = "Required " + needed + " liquidity swept";
-    }
-
-    if (isTapped && sweep && valid) {
-      state = "QUALIFIED · first OB wick retest";
-    } else if (isTapped && !sweep) {
-      state = "Tapped · no qualifying " +
-        selected.tf + " sweep";
-    } else if (ob.invalid !== null && tap === null) {
-      state = "Invalidated before retest";
-    }
-
-    // M5 confirmation is displayed separately.
-    let confirm = "Not yet confirmed";
-    let confirmEvent = null;
-
-    if (isTapped && m5) {
-      const firstTapTime = selected.bars[tap].time;
-
-      confirmEvent = m5.st.events.find(e =>
-        m5.bars[e.i].time >= firstTapTime &&
-        e.dir === dir
-      );
-
-      if (confirmEvent) {
-        confirm = dir + " " + confirmEvent.kind +
-          " after retest";
-      }
-    }
-
-    // Target liquidity comes from this timeframe only.
-    const targets = dir === "BULLISH"
-      ? selected.liq.levels.filter(p =>
-          p.type === "high" && p.level > ob.hi)
-      : selected.liq.levels.filter(p =>
-          p.type === "low" && p.level < ob.lo);
-
-    targets.sort((x, y) =>
-      dir === "BULLISH"
-        ? x.level - y.level
-        : y.level - x.level
-    );
-
-    out.push({
-      ob,
-      sweep,
-      state,
-      confirm,
-      confirmEvent,
-      target: targets[0] || null
-    });
+function setupStates(selected,m5){
+ if(!selected)return[];const sweeps=selected.liq.events.filter(e=>e.kind==="sweep"),out=[];
+ for(const ob of selected.zones){const tap=ob.firstTap,dir=ob.dir,needed=dir==="BULLISH"?"SSL":"BSL",tapTime=tap===null?Infinity:selected.bars[tap].time;
+  const eligible=sweeps.filter(e=>e.type===needed&&e.time<tapTime),sweep=eligible.length?eligible[eligible.length-1]:null,isTapped=tap!==null;
+  const valid=ob.invalid===null||(isTapped&&ob.invalid>tap);let state="OB detected";
+  if(sweep)state="Required "+needed+" liquidity swept";
+  if(isTapped&&sweep)state=ob.invalid!==null&&ob.invalid>tap?"QUALIFIED · retest then invalidated":"QUALIFIED · first OB wick retest";
+  else if(isTapped&&!sweep)state="Tapped · no qualifying "+selected.tf+" sweep";
+  else if(ob.invalid!==null&&tap===null)state="Invalidated before retest";
+  let confirm="Not yet confirmed",confirmEvent=null;
+  // M5 is a separate confirmation layer. A 5m setup cannot confirm itself.
+  if(isTapped&&m5&&selected.tf!=="5m"){const firstTapTime=selected.bars[tap].time;
+   confirmEvent=m5.st.events.find(e=>m5.bars[e.i].time>=firstTapTime&&e.dir===dir);
+   if(confirmEvent)confirm=dir+" "+confirmEvent.kind+" after retest";
   }
-
-  return out;
+  // Keep a target eligible when it was cleared after the first OB retest; that is a target hit.
+  const targets=selected.liq.levels.filter(p=>(p.clearance===null||(tap!==null&&p.clearance.i>tap&&(ob.invalid===null||p.clearance.i<ob.invalid)))&&(dir==="BULLISH"?p.type==="high"&&p.level>ob.hi:p.type==="low"&&p.level<ob.lo));
+  targets.sort((x,y)=>dir==="BULLISH"?x.level-y.level:y.level-x.level);
+  out.push({ob,sweep,state,confirm,confirmEvent,target:targets[0]||null});
+ }
+ return out;
 }
- 
- function scanEvents(a){
+function scanEvents(a){
  const recent=a.bars.length-3;
  for(const e of a.liq.events)if(e.i>=recent)emit(a.tf+"-liq-"+e.time,a.tf+" "+e.type+" "+e.kind+" at "+fmt(e.level));
  for(const e of a.st.events)if(e.i>=recent)emit(a.tf+"-structure-"+a.bars[e.i].time,a.tf+" "+e.dir+" "+e.kind);
  for(const ob of a.zones){if(ob.created>=recent)emit(a.tf+"-ob-"+ob.id,a.tf+" new "+ob.dir+" OB detected.");
-  if(ob.firstTap!==null&&ob.firstTap>=recent)emit(a.tf+"-tap-"+ob.id,a.tf+" first wick touch of "+ob.dir+" OB.");}
+  if(ob.firstTap!==null&&ob.firstTap>=recent)emit(a.tf+"-tap-"+ob.id,a.tf+" first wick touch of "+ob.dir+" OB.");
+  if(ob.invalid!==null&&ob.invalid>=recent)emit(a.tf+"-invalid-"+ob.id,a.tf+" "+ob.dir+" OB invalidated.");}
 }
-function renderEvents(){const box=$("events");box.replaceChildren();if(!S.events.length){const d=document.createElement("div");d.className="item";d.textContent="No new events this session.";box.append(d);return;}
- for(const e of S.events){const d=document.createElement("div");d.className="item";d.textContent=timeLabel(e.t)+" · "+e.msg;box.append(d);}}
-
-function scanQualifiedSetups() {
-  const m5 = S.data["5m"];
-
-  // Scan every timeframe independently.
-  for (const tf of ["5m", "15m", "1h", "4h"]) {
-    const a = S.data[tf];
-    if (!a) continue;
-
-    // Each timeframe uses its own liquidity and OB analysis.
-    for (const s of setupStates(a, null, m5)) {
-      if (!s.state.startsWith("QUALIFIED")) continue;
-
-      if (s.ob.firstTap === null) continue;
-
-      const tapTime = a.bars[s.ob.firstTap].time;
-
-      emit(
-        "qualified-" + tf + "-" + s.ob.id,
-        "BTCUSD | " + tf.toUpperCase() +
-        " | QUALIFIED " + s.ob.dir +
-        " OB retest after " + tf.toUpperCase() +
-        " " + (s.sweep ? s.sweep.type : "") +
-        " liquidity sweep. Target: " +
-        (s.target ? fmt(s.target.level) : "not identified") + "."
-      );
-
-      // M5 confirmation is a separate alert.
-      if (s.confirmEvent) {
-        emit(
-          "m5-confirm-" + tf + "-" + s.ob.id,
-          "BTCUSD | M5 | CONFIRMATION for " +
-          tf.toUpperCase() + " OB setup: " +
-          s.confirm + "."
-        );
-      }
-    }
+function scanQualifiedSetups(){
+ const m5=S.data["5m"];
+ for(const tf of TF){const a=S.data[tf];if(!a)continue;
+  for(const s of setupStates(a,m5)){if(!s.state.startsWith("QUALIFIED")||s.ob.firstTap===null)continue;
+   const tapIndex=s.ob.firstTap;
+   // Do not replay old historical setups as new alerts when the page first loads.
+   if(tapIndex<a.bars.length-3)continue;
+   emit("qualified-"+tf+"-"+s.ob.id,"BTCUSD | "+tf.toUpperCase()+" | QUALIFIED "+s.ob.dir+" OB retest after "+tf.toUpperCase()+" "+(s.sweep?s.sweep.type:"")+" liquidity sweep. Target: "+(s.target?fmt(s.target.level):"not identified")+".");
+   if(s.target&&s.target.clearance&&s.target.clearance.i>tapIndex)
+    emit("target-hit-"+tf+"-"+s.ob.id,"BTCUSD | "+tf.toUpperCase()+" | opposing liquidity target reached at "+fmt(s.target.level)+".");
+   if(s.confirmEvent)emit("m5-confirm-"+tf+"-"+s.ob.id,"BTCUSD | M5 | CONFIRMATION for "+tf.toUpperCase()+" OB setup: "+s.confirm+".");
   }
+ }
 }
-
+function renderEvents(){
+ const box=$("events");box.replaceChildren();if(!S.events.length){const d=document.createElement("div");d.className="item";d.textContent="No new events this session.";box.append(d);return;}
+ for(const e of S.events){const d=document.createElement("div");d.className="item";d.textContent=timeLabel(e.t)+" · "+e.msg;box.append(d);}
+}
 function renderContext(){
  const h=h4Bias(S.data["4h"]);$("h4").textContent=h.bias;$("h4").style.color=h.bias==="BULLISH"?C.bull:h.bias==="BEARISH"?C.bear:C.muted;$("biasInfo").textContent=h.reason;
  const one=S.data["1h"];if(one){$("h1").textContent=one.st.bias+" structure";$("h1").style.color=one.st.bias==="BULLISH"?C.bull:one.st.bias==="BEARISH"?C.bear:C.muted;}
- const fifteen=S.data["15m"];if(fifteen){const recent=fifteen.liq.events.slice(-3).reverse();$("m15").textContent=recent.length?recent.map(e=>e.type+" "+e.kind).join(" · "):"No recent sweep";} 
+ const fifteen=S.data["15m"];if(fifteen){const recent=fifteen.liq.events.slice(-3).reverse();$("m15").textContent=recent.length?recent.map(e=>e.type+" "+e.kind).join(" · "):"No recent sweep";}
 }
 function renderChart(canvas,a){
  const ctx=canvas.getContext("2d");if(!ctx)throw Error("Canvas unavailable");
@@ -392,96 +284,18 @@ function renderChart(canvas,a){
  for(const e of a.liq.events.filter(e=>visible(e.i))){const xx=x(e.i-offset),yy=y(e.extreme);ctx.fillStyle=e.type==="BSL"?C.bear:C.ssl;ctx.beginPath();ctx.arc(xx,yy,4,0,Math.PI*2);ctx.fill();}
  ctx.fillStyle=C.muted;ctx.textAlign="center";[0,Math.floor(bars.length/3),Math.floor(2*bars.length/3),bars.length-1].forEach(i=>ctx.fillText(new Date(bars[i].time).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),x(i),h*.94));
 }
-
-function renderObs(a) {
-  if (!a) return;
-
-  const m5 = S.data["5m"];
-  const states = setupStates(a, null, m5);
-  const items = [];
-
-  // Display OB observations belonging to the selected timeframe.
-  for (const s of states.slice(-12).reverse()) {
-    const ob = s.ob;
-
-    items.push({
-      title: s.state,
-      detail:
-        ob.dir + " OB " +
-        fmt(ob.lo) + "–" + fmt(ob.hi) +
-        " · formed " + timeLabel(ob.createdTime) +
-        (ob.firstTap !== null
-          ? " · first tap " + timeLabel(a.bars[ob.firstTap].time)
-          : " · not yet tapped") +
-        (s.sweep
-          ? " · " + a.tf + " " + s.sweep.type +
-            " sweep " + timeLabel(s.sweep.time)
-          : "") +
-        (s.target
-          ? " · next liquidity target " + fmt(s.target.level)
-          : " · no visible opposing target") +
-        (s.state.startsWith("QUALIFIED")
-          ? " · M5: " + s.confirm
-          : "")
-    });
-  }
-
-  // Display structure events from the selected timeframe only.
-  for (const e of a.st.events.slice(-3).reverse()) {
-    items.push({
-      title: e.dir + " " + e.kind,
-      detail:
-        fmt(e.level) + " · " +
-        timeLabel(a.bars[e.i].time)
-    });
-  }
-
-  // Display liquidity sweeps from the selected timeframe only.
-  const sweeps = (a.liq.events || [])
-    .filter(e => e.kind === "sweep")
-    .slice(-3)
-    .reverse();
-
-  for (const e of sweeps) {
-    items.push({
-      title: a.tf + " " + e.type + " " + e.kind,
-      detail:
-        fmt(e.level) + " · " + timeLabel(e.time)
-    });
-  }
-
-  $("count").textContent =
-    items.length + " observations";
-
-  const box = $("observations");
-  box.replaceChildren();
-
-  if (!items.length) {
-    const d = document.createElement("div");
-    d.className = "item";
-    d.textContent = "No qualifying recent observations.";
-    box.append(d);
-    return;
-  }
-
-  for (const v of items.slice(0, 12)) {
-    const d = document.createElement("div");
-    const s = document.createElement("strong");
-    const t = document.createElement("div");
-
-    d.className = "item";
-    s.textContent = v.title;
-    t.className = "detail";
-    t.textContent = v.detail;
-
-    d.append(s, t);
-    box.append(d);
-  }
+function renderObs(a){
+ if(!a)return;const states=setupStates(a,S.data["5m"]),items=[];
+ for(const s of states.slice(-12).reverse()){const ob=s.ob;items.push({title:s.state,detail:ob.dir+" OB "+fmt(ob.lo)+"–"+fmt(ob.hi)+" · formed "+timeLabel(ob.createdTime)+(ob.firstTap!==null?" · first tap "+timeLabel(a.bars[ob.firstTap].time):" · not yet tapped")+(s.sweep?" · "+a.tf+" "+s.sweep.type+" sweep "+timeLabel(s.sweep.time):"")+(s.target?" · next liquidity target "+fmt(s.target.level):" · no visible un-cleared opposing target")+(s.state.startsWith("QUALIFIED")?" · M5: "+s.confirm:"")});}
+ for(const e of a.st.events.slice(-3).reverse())items.push({title:e.dir+" "+e.kind,detail:fmt(e.level)+" · "+timeLabel(a.bars[e.i].time)});
+ for(const e of a.liq.events.filter(e=>e.kind==="sweep").slice(-3).reverse())items.push({title:a.tf+" "+e.type+" sweep",detail:fmt(e.level)+" · "+timeLabel(e.time)});
+ $("count").textContent=items.length+" observations";const box=$("observations");box.replaceChildren();
+ if(!items.length){const d=document.createElement("div");d.className="item";d.textContent="No qualifying recent observations.";box.append(d);return;}
+ for(const v of items.slice(0,12)){const d=document.createElement("div"),s=document.createElement("strong"),t=document.createElement("div");d.className="item";s.textContent=v.title;t.className="detail";t.textContent=v.detail;d.append(s,t);box.append(d);}
 }
-
 function renderSelected(){
  const tf=$("tf").value,a=S.data[tf];if(!a){$("chartInfo").textContent=S.errors[tf]?"Unavailable: "+S.errors[tf]:"Waiting for "+tf+" candles…";return;}
- try{renderChart($("chart"),a);renderObs(a);$("chartInfo").textContent=tf+" · "+Math.min(115,a.bars.length)+" completed candles · first wick touch ends OB box · source: "+(a.source||S.source)+(S.errors[tf]?" · STALE DATA":"");}catch(e){$("chartInfo").textContent="Chart error: "+e.message;console.error(e);}
+ try{renderChart($("chart"),a);renderObs(a);$("chartInfo").textContent=tf+" · "+Math.min(115,a.bars.length)+" completed candles · first wick touch ends OB box · source: "+a.source+(S.errors[tf]?" · STALE DATA":"");}catch(e){$("chartInfo").textContent="Chart error: "+e.message;console.error(e);}
 }
 async function refresh(){
  if(S.busy)return;S.busy=true;status("Updating…");const failures=[];
@@ -491,17 +305,16 @@ async function refresh(){
  }finally{S.busy=false;}
 }
 function syntheticTests(){
- const b=[];const t=Date.UTC(2025,0,1);for(let i=0;i<100;i++){const mid=100+Math.sin(i/5)*3, o=mid-.4,c=mid+.4;b.push({time:t+i*300000,o,h:Math.max(o,c)+.8,l:Math.min(o,c)-.8,c,v:10});}
+ const b=[],t=Date.UTC(2025,0,1);for(let i=0;i<100;i++){const mid=100+Math.sin(i/5)*3,o=mid-.4,c=mid+.4;b.push({time:t+i*300000,o,h:Math.max(o,c)+.8,l:Math.min(o,c)-.8,c,v:10});}
  const a=analyse("5m",b);if(a.bars.length!==100)throw Error("Candle-analysis test failed");
  const invalid=[...b];invalid[20]={...invalid[20],h:0};let rejected=false;try{analyse("5m",invalid);}catch{rejected=true;}if(!rejected)throw Error("Invalid OHLC test failed");
- // Exact first-wick-touch regression test: any overlap is a touch.
- const zone={lo:100,hi:110};const wick={h:100.01,l:99.5};if(!(wick.h>=zone.lo&&wick.l<=zone.hi))throw Error("Wick-touch test failed");
+ const zone={lo:100,hi:110},wick={h:100.01,l:99.5};if(!(wick.h>=zone.lo&&wick.l<=zone.hi))throw Error("Wick-touch test failed");
  console.info("Basic synthetic checks passed. These do not validate profitability or every SMC edge case.");
 }
 $("tf").addEventListener("change",renderSelected);
 $("refresh").addEventListener("click",async()=>{await ticker();await refresh();});
 $("fullscreen").addEventListener("click",async()=>{const c=$("chartCard");try{if(document.fullscreenElement)await document.exitFullscreen();else if(c.requestFullscreen)await c.requestFullscreen();else $("chartInfo").textContent="Fullscreen unavailable.";}catch(e){$("chartInfo").textContent="Fullscreen could not be opened.";console.warn(e);}});
-document.addEventListener("fullscreenchange",()=>{ $("fullscreen").textContent=document.fullscreenElement?"⤢ Exit fullscreen":"⛶ Fullscreen";requestAnimationFrame(renderSelected);});
+document.addEventListener("fullscreenchange",()=>{$("fullscreen").textContent=document.fullscreenElement?"⤢ Exit fullscreen":"⛶ Fullscreen";requestAnimationFrame(renderSelected);});
 window.addEventListener("resize",()=>requestAnimationFrame(renderSelected));
 $("notify").addEventListener("click",async()=>{if(!("Notification"in window)){$("permission").textContent="Not supported";return;}try{$("permission").textContent="Permission: "+await Notification.requestPermission();}catch(e){$("permission").textContent="Permission request failed";}});
 async function start(){try{syntheticTests();}catch(e){status("Synthetic check failed","error");console.error(e);}await ticker();await refresh();if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(e=>console.warn("Service worker registration:",e));}
@@ -509,4 +322,3 @@ start();setInterval(ticker,30000);setInterval(refresh,60000);
 </script>
 </body>
 </html>
-
