@@ -1,4 +1,4 @@
-const CACHE = 'btcusd-smc-v12';
+const CACHE = 'btcusd-smc-v13';
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([
     './','./index.html','./manifest.webmanifest',
