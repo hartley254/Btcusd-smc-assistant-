@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0b1118">
 <title>BTC Hartley SMC</title>
 <style>
-:root{color-scheme:dark;--bg:#080e15;--panel:#111b26;--line:#29394a;--text:#edf3f9;--muted:#8fa1b4;--green:#21c49a;--red:#ef596c;--purple:#a878ff}
+:root{color-scheme:dark;--bg:#080e15;--panel:#111b26;--line:#29394a;--text:#edf3f9;--muted:#8fa1b4;--green:#21c49a;--red:#ef596c;--purple:#a878ff;--amber:#f0b44d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,sans-serif}
 header{padding:18px;border-bottom:1px solid var(--line)}h1{font-size:21px;margin:0}header p,.muted,.note{color:var(--muted)}header p{font-size:12px;margin:5px 0}
 main{max-width:1150px;margin:auto;padding:12px;display:grid;gap:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
@@ -19,6 +19,7 @@ canvas{display:block;width:100%;height:450px;margin-top:12px;background:#080f17;
 .bias{font-size:21px;font-weight:750;margin:12px 0 5px}.bull{color:var(--green)}.bear{color:var(--red)}.note{font-size:11px;line-height:1.6}
 .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.mini{background:#0b141e;border-radius:8px;padding:10px;min-width:0}.mini small{display:block;color:var(--muted);font-size:10px}.mini strong{display:block;margin-top:5px;font-size:12px;overflow-wrap:anywhere}
 .items{display:grid;gap:8px;margin-top:12px}.item{background:#0b141e;border:1px solid var(--line);border-radius:8px;padding:11px;font-size:12px;line-height:1.6}.empty{color:var(--muted);font-size:12px;padding:10px 0}
+.tag{display:inline-block;border:1px solid var(--line);border-radius:5px;padding:2px 6px;font-size:10px;color:var(--muted);margin-left:5px}.tag.good{color:var(--green);border-color:var(--green)}.tag.wait{color:var(--amber);border-color:var(--amber)}
 footer{text-align:center;color:var(--muted);font-size:10px;padding:20px}@media(min-width:700px){.stats{grid-template-columns:repeat(4,1fr)}canvas{height:540px}}
 </style>
 </head>
@@ -53,14 +54,18 @@ footer{text-align:center;color:var(--muted);font-size:10px;padding:20px}@media(m
 const $=id=>document.getElementById(id);
 const CFG={count:300,swing:2,dispATR:1.2,bodyRatio:.60,sweepATR:.05,sweepPct:.0002,dispWindow:3,biasExpiry:20,liqATR:.12,liqPct:.00015};
 const SEC={"5m":300,"15m":900,"1h":3600,"4h":14400};
-const COLOR={green:"#21c49a",red:"#ef596c",purple:"#a878ff",grid:"#29394a",muted:"#8fa1b4",text:"#edf3f9"};
-let DATA={},source="Binance",alertKeys=new Set();
+const COLOR={green:"#21c49a",red:"#ef596c",purple:"#a878ff",grid:"#29394a",muted:"#8fa1b4",text:"#edf3f9",amber:"#f0b44d"};
+let DATA={},source="Binance BTCUSDT",alertKeys=new Set();
 try{alertKeys=new Set(JSON.parse(localStorage.getItem("hartleySMCAlerts")||"[]"));}catch(e){}
 const fmt=n=>Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const money=n=>n==null?"—":"$"+fmt(n);
 
-/* All candles use [timestamp, open, high, low, close, volume]. */
-function normalizeBinance(rows){return rows.filter(r=>+r[6]<Date.now()).map(r=>[+r[0],+r[1],+r[2],+r[3],+r[4],+r[5]]).filter(c=>c.every(Number.isFinite)).sort((a,b)=>a[0]-b[0]);}
+/* Candle format everywhere: [timestamp, open, high, low, close, volume].
+   Only completed candles are analysed. */
+function normalizeBinance(rows){
+ return rows.filter(r=>+r[6]<Date.now()).map(r=>[+r[0],+r[1],+r[2],+r[3],+r[4],+r[5]])
+ .filter(c=>c.every(Number.isFinite)).sort((a,b)=>a[0]-b[0]);
+}
 async function getBinance(tf){
  const r=await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval="+tf+"&limit="+CFG.count,{cache:"no-store"});
  if(!r.ok)throw Error("Binance HTTP "+r.status);
@@ -68,46 +73,55 @@ async function getBinance(tf){
 }
 async function getCoinbase(tf){
  const sec=SEC[tf],map=new Map();let end=Date.now();
- while(map.size<CFG.count){
-  const n=Math.min(280,CFG.count-map.size),start=end-n*sec*1000;
+ for(let page=0;page<4&&map.size<CFG.count;page++){
+  const start=end-280*sec*1000;
   const url="https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity="+sec+"&start="+encodeURIComponent(new Date(start).toISOString())+"&end="+encodeURIComponent(new Date(end).toISOString());
   const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw Error("Coinbase HTTP "+r.status);
   const rows=await r.json();if(!Array.isArray(rows))throw Error("Invalid Coinbase response");
   rows.forEach(x=>{const t=+x[0]*1000;if(t+sec*1000<=Date.now())map.set(t,[t,+x[3],+x[2],+x[1],+x[4],+x[5]]);});
   if(!rows.length)break;end=start;if(rows.length<2)break;
  }
- return [...map.values()].sort((a,b)=>a[0]-b[0]).slice(-CFG.count);
+ const result=[...map.values()].sort((a,b)=>a[0]-b[0]).slice(-CFG.count);
+ if(result.length<30)throw Error("Coinbase returned too few completed candles");return result;
 }
 async function candles(tf){
  try{const b=await getBinance(tf);source="Binance BTCUSDT";return b;}
- catch(e){const b=await getCoinbase(tf);source="Coinbase BTC-USD fallback";return b;}
+ catch(binanceError){const b=await getCoinbase(tf);source="Coinbase BTC-USD fallback";return b;}
 }
 async function ticker(){
  try{
   let p,h,l,v,ch;
   try{
    const r=await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");if(!r.ok)throw Error();
-   const d=await r.json();p=+d.lastPrice;h=+d.highPrice;l=+d.lowPrice;v=+d.volume;ch=+d.priceChangePercent;
+   const d=await r.json();p=+d.lastPrice;h=+d.highPrice;l=+d.lowPrice;v=+d.volume;ch=+d.priceChangePercent;source="Binance BTCUSDT";
   }catch(e){
-   const [s,t]=await Promise.all([fetch("https://api.exchange.coinbase.com/products/BTC-USD/stats").then(r=>r.json()),fetch("https://api.exchange.coinbase.com/products/BTC-USD/ticker").then(r=>r.json())]);
+   const [s,t]=await Promise.all([
+    fetch("https://api.exchange.coinbase.com/products/BTC-USD/stats").then(r=>{if(!r.ok)throw Error("Coinbase stats unavailable");return r.json();}),
+    fetch("https://api.exchange.coinbase.com/products/BTC-USD/ticker").then(r=>{if(!r.ok)throw Error("Coinbase ticker unavailable");return r.json();})
+   ]);
    p=+t.price;h=+s.high;l=+s.low;v=+s.volume;ch=(+s.last/+s.open-1)*100;source="Coinbase BTC-USD fallback";
   }
-  $("price").textContent=money(p);$("high").textContent=money(h);$("low").textContent=money(l);$("volume").textContent=v.toLocaleString("en-US",{maximumFractionDigits:2})+" BTC";
+  $("price").textContent=money(p);$("high").textContent=money(h);$("low").textContent=money(l);
+  $("volume").textContent=v.toLocaleString("en-US",{maximumFractionDigits:2})+" BTC";
   $("change").textContent=(ch>=0?"+":"")+ch.toFixed(2)+"% over 24 hours";$("change").style.color=ch>=0?COLOR.green:COLOR.red;
-  $("updated").textContent=new Date().toLocaleTimeString();$("connection").textContent="Connected";$("source").textContent="Source: "+source+". Spot prices can differ from broker BTCUSD CFDs.";
+  $("updated").textContent=new Date().toLocaleTimeString();$("connection").textContent="Connected";
+  $("source").textContent="Source: "+source+". Spot prices can differ from broker BTCUSD CFDs.";
  }catch(e){$("connection").textContent="Ticker unavailable";}
 }
 function atr(b,i){
- if(i<14)return null;let sum=0;
+ if(i<14||!b[i]||!b[i-1])return null;let sum=0;
  for(let k=i-13;k<=i;k++){const c=b[k],p=b[k-1];sum+=Math.max(c[2]-c[3],Math.abs(c[2]-p[4]),Math.abs(c[3]-p[4]));}
  return sum/14;
 }
 function swings(b){
- const out=[];for(let i=CFG.swing;i<b.length-CFG.swing;i++){
+ const out=[];
+ for(let i=CFG.swing;i<b.length-CFG.swing;i++){
   let hi=true,lo=true;
   for(let j=i-CFG.swing;j<=i+CFG.swing;j++){if(j===i)continue;if(b[j][2]>=b[i][2])hi=false;if(b[j][3]<=b[i][3])lo=false;}
-  if(hi)out.push({type:"high",i,level:b[i][2]});if(lo)out.push({type:"low",i,level:b[i][3]});
- }return out;
+  if(hi)out.push({type:"high",i,level:b[i][2]});
+  if(lo)out.push({type:"low",i,level:b[i][3]});
+ }
+ return out;
 }
 function structure(b){
  const ps=swings(b),highs=ps.filter(x=>x.type==="high"),lows=ps.filter(x=>x.type==="low");
@@ -115,21 +129,27 @@ function structure(b){
  if(highs.length>=2&&lows.length>=2){
   const [h1,h2]=highs.slice(-2),[l1,l2]=lows.slice(-2);
   if(h2.level>h1.level&&l2.level>l1.level){bias="BULLISH";why="Higher highs and higher lows.";}
-  if(h2.level<h1.level&&l2.level<l1.level){bias="BEARISH";why="Lower highs and lower lows.";}
+  else if(h2.level<h1.level&&l2.level<l1.level){bias="BEARISH";why="Lower highs and lower lows.";}
  }
  const i=b.length-1,c=b[i],h=highs.at(-1),l=lows.at(-1);let event="No new structure break",level=null,index=-1;
- if(h&&c[4]>h.level){event=bias==="BEARISH"?"Bullish CHOCH/MSS":"Bullish BOS";bias="BULLISH";why="Completed candle closed above confirmed swing high.";level=h.level;index=i;}
- else if(l&&c[4]<l.level){event=bias==="BULLISH"?"Bearish CHOCH/MSS":"Bearish BOS";bias="BEARISH";why="Completed candle closed below confirmed swing low.";level=l.level;index=i;}
+ if(h&&c[4]>h.level){event=bias==="BEARISH"?"Bullish CHOCH/MSS":"Bullish BOS";bias="BULLISH";why="Latest completed candle closed above a confirmed swing high.";level=h.level;index=i;}
+ else if(l&&c[4]<l.level){event=bias==="BULLISH"?"Bearish CHOCH/MSS":"Bearish BOS";bias="BEARISH";why="Latest completed candle closed below a confirmed swing low.";level=l.level;index=i;}
  return{bias,why,event,level,index,highs,lows};
 }
 function liquidity(b,s){
  const price=b.at(-1)[4],a=atr(b,b.length-1)||price*.001,tol=Math.max(price*CFG.liqPct,a*CFG.liqATR);
  function group(points,type){
-  const gs=[];for(const p of points){let g=gs.find(x=>Math.abs(x.level-p.level)<=tol);if(!g){g={level:p.level,members:[]};gs.push(g);}g.members.push(p);g.level=g.members.reduce((n,x)=>n+x.level,0)/g.members.length;}
+  const gs=[];
+  for(const p of points){let g=gs.find(x=>Math.abs(x.level-p.level)<=tol);if(!g){g={level:p.level,members:[]};gs.push(g);}g.members.push(p);g.level=g.members.reduce((n,x)=>n+x.level,0)/g.members.length;}
   return gs.map(g=>({type,level:g.level,count:g.members.length,lastIndex:Math.max(...g.members.map(x=>x.i))}));
  }
  const bsl=group(s.highs,"BSL"),ssl=group(s.lows,"SSL");
- function uncleared(list,type){return list.filter(p=>{for(let i=p.lastIndex+3;i<b.length;i++){if(type==="BSL"&&b[i][2]>p.level)return false;if(type==="SSL"&&b[i][3]<p.level)return false;}return true;});}
+ function uncleared(list,type){
+  return list.filter(p=>{
+   for(let i=p.lastIndex+3;i<b.length;i++){if(type==="BSL"&&b[i][2]>p.level)return false;if(type==="SSL"&&b[i][3]<p.level)return false;}
+   return true;
+  });
+ }
  return{price,bsl:uncleared(bsl,"BSL").filter(x=>x.level>price),ssl:uncleared(ssl,"SSL").filter(x=>x.level<price),allBSL:bsl,allSSL:ssl};
 }
 function displacement(b,i,dir){
@@ -139,8 +159,8 @@ function displacement(b,i,dir){
  const ph=Math.max(...prev.map(x=>x[2])),pl=Math.min(...prev.map(x=>x[3])),pos=(c[4]-c[3])/range;
  return dir==="BULLISH"?c[4]>c[1]&&pos>=.75&&c[4]>ph:c[4]<c[1]&&pos<=.25&&c[4]<pl;
 }
-/* H4: prior confirmed swing is swept, same candle closes back through it,
-   then qualifying displacement must occur within the next 3 completed bars. */
+/* H4 rule: confirmed swing liquidity sweep + close back through that level,
+   followed by displacement within the next 3 completed candles. */
 function h4Bias(b){
  if(b.length<25)return{bias:"INSUFFICIENT DATA",why:"At least 25 completed H4 candles are needed."};
  const ps=swings(b),events=[];
@@ -151,9 +171,7 @@ function h4Bias(b){
    const bear=p.type==="high"&&c[2]>=p.level+threshold&&c[4]<p.level;
    if(!bull&&!bear)continue;
    for(let j=i+1;j<=Math.min(i+CFG.dispWindow,b.length-1);j++){
-    if(displacement(b,j,bull?"BULLISH":"BEARISH")){
-     events.push({bias:bull?"BULLISH":"BEARISH",pivot:p.level,sweepIndex:i,extreme:bull?c[3]:c[2],displacement:j});break;
-    }
+    if(displacement(b,j,bull?"BULLISH":"BEARISH")){events.push({bias:bull?"BULLISH":"BEARISH",pivot:p.level,sweepIndex:i,extreme:bull?c[3]:c[2],displacement:j});break;}
    }
   }
  }
@@ -161,10 +179,15 @@ function h4Bias(b){
  for(const e of events){
   const invalid=b.slice(e.displacement+1).some(c=>e.bias==="BULLISH"?c[4]<e.extreme:c[4]>e.extreme);
   const age=b.length-1-e.displacement;
-  if(!invalid&&age<=CFG.biasExpiry)return{...e,age,why:"Confirmed swing liquidity sweep, close-back-through and displacement. Bias expires after 20 H4 candles or invalidation."};
+  if(!invalid&&age<=CFG.biasExpiry)return{...e,age,why:"Confirmed swing sweep, close-back-through and displacement. Expires after 20 H4 candles or invalidation."};
  }
- return{bias:"NEUTRAL",why:"No active qualifying H4 sweep and displacement in the available history."};
+ return{bias:"NEUTRAL",why:"No active qualifying H4 sweep and displacement in the loaded history."};
 }
+
+/* OB heuristic: an impulse candle must create a three-candle FVG.
+   The OB anchor is the nearest opposing candle in the prior 6 bars;
+   if none exists, the immediately preceding candle is allowed as a same-colour
+   OB candidate (per the strategy rule that an OB need not be opposing-colour). */
 function detectZones(b,tf){
  const zones=[];
  for(let i=16;i<b.length;i++){
@@ -175,30 +198,56 @@ function detectZones(b,tf){
   if(bull&&c[3]>left[2])fvg={low:left[2],high:c[3]};
   if(bear&&c[2]<left[3])fvg={low:c[2],high:left[3]};
   if(!fvg)continue;
-  let oi=-1;for(let k=i-1;k>=Math.max(0,i-6);k--){const x=b[k];if(bull?x[4]<x[1]:x[4]>x[1]){oi=k;break;}}
+  let oi=-1;
+  for(let k=i-1;k>=Math.max(0,i-6);k--){const x=b[k];if(bull?x[4]<x[1]:x[4]>x[1]){oi=k;break;}}
+  let obType="OPPOSING";
+  if(oi<0){oi=i-1;obType="SAME-COLOUR";}
   if(oi<0)continue;
-  zones.push({direction:bull?"BULLISH":"BEARISH",obLow:b[oi][3],obHigh:b[oi][2],fvgLow:fvg.low,fvgHigh:fvg.high,obIndex:oi,createdIndex:i,tf});
+  const z={id:tf+"-"+i+"-"+oi,direction:bull?"BULLISH":"BEARISH",obLow:b[oi][3],obHigh:b[oi][2],
+   fvgLow:fvg.low,fvgHigh:fvg.high,obIndex:oi,createdIndex:i,tf,obType,firstTapIndex:null,tapPrice:null};
+  /* A tap is any candle-range overlap with the OB. A wick alone is sufficient. */
+  for(let j=i+1;j<b.length;j++){
+   if(b[j][2]>=z.obLow&&b[j][3]<=z.obHigh){z.firstTapIndex=j;z.tapPrice=z.direction==="BULLISH"?Math.min(b[j][3],z.obHigh):Math.max(b[j][2],z.obLow);break;}
+  }
+  zones.push(z);
  }
- for(const z of zones){for(let j=z.createdIndex+1;j<b.length;j++){if(b[j][2]>=z.obLow&&b[j][3]<=z.obHigh){z.retestIndex=j;break;}}}
- return zones.slice(-30);
+ return zones.slice(-40);
 }
-function sweepAt(b,pools,start,dir){
- const levels=dir==="BULLISH"?pools.allSSL:pools.allBSL;
- for(let i=start;i<b.length;i++)for(const p of levels){
-  if(p.lastIndex+2>=i)continue;const c=b[i];
-  if(dir==="BULLISH"?c[3]<p.level&&c[4]>p.level:c[2]>p.level&&c[4]<p.level)return{index:i,level:p.level,extreme:dir==="BULLISH"?c[3]:c[2]};
+/* M15 sweep must be a real wick-through and close-back-through of a swing
+   that was already confirmed before the sweep candle. Search all available
+   prior sweeps, including sweeps that occurred before the OB was created. */
+function findPriorSweep(b,zone){
+ const ps=swings(b),wanted=zone.direction==="BULLISH"?"low":"high",events=[];
+ const end=zone.firstTapIndex==null?b.length-1:zone.firstTapIndex;
+ for(let i=0;i<=end;i++){
+  const c=b[i];
+  for(const p of ps){
+   if(p.type!==wanted||p.i+CFG.swing>=i)continue;
+   const a=atr(b,i-1)||Math.abs(p.level)*.0005;
+   const threshold=Math.max(Math.abs(p.level)*CFG.sweepPct,a*CFG.sweepATR);
+   const swept=zone.direction==="BULLISH"
+    ? c[3]<=p.level-threshold&&c[4]>p.level
+    : c[2]>=p.level+threshold&&c[4]<p.level;
+   if(swept)events.push({index:i,level:p.level,extreme:zone.direction==="BULLISH"?c[3]:c[2]});
+  }
  }
- return null;
+ return events.filter(e=>e.index<end).sort((a,b)=>b.index-a.index)[0]||null;
 }
 function analyse(tf,b){
  const s=structure(b),p=liquidity(b,s),zones=detectZones(b,tf),setups=[];
- if(tf==="15m")for(const z of zones){const sw=sweepAt(b,p,z.createdIndex,z.direction);if(!sw)continue;for(let i=sw.index+1;i<b.length;i++){if(b[i][2]>=z.obLow&&b[i][3]<=z.obHigh){setups.push({...z,sweep:sw,retestIndex:i});break;}}}
+ if(tf==="15m"){
+  for(const z of zones){
+   if(z.firstTapIndex==null)continue;
+   const sweep=findPriorSweep(b,z);
+   if(sweep&&sweep.index<z.firstTapIndex)setups.push({...z,sweep,qualified:true});
+  }
+ }
  return{tf,b,s,p,zones,setups};
 }
 function nearest(arr,price){return arr.slice().sort((a,b)=>Math.abs(a.level-price)-Math.abs(b.level-price))[0];}
 function renderPanel(id,a,biasOverride){
  const sig=biasOverride||a.s;
- $(id+"Bias").textContent=sig.bias;$(id+"Bias").className="bias "+(sig.bias==="BULLISH"?"bull":sig.bias==="BEARISH"?"bear":"");
+ $(id+"Bias").textContent=sig.bias;$ (id+"Bias").className="bias "+(sig.bias==="BULLISH"?"bull":sig.bias==="BEARISH"?"bear":"");
  $(id+"Detail").textContent=sig.why;
  const h=nearest(a.p.bsl,a.p.price),l=nearest(a.p.ssl,a.p.price);
  const values=[["Nearest BSL",h?money(h.level):"—"],["Nearest SSL",l?money(l.level):"—"],["Confirmed swings",a.s.highs.length+a.s.lows.length]];
@@ -211,32 +260,46 @@ function draw(a){
  const L=35,R=W-120,T=30,B=H-42,step=(R-L)/b.length,y=v=>B-(v-min)/(max-min)*(B-T),x=i=>L+(i+.5)*step;
  ctx.font="13px system-ui";ctx.textBaseline="middle";
  for(let n=0;n<=5;n++){const v=max-(max-min)*n/5,yy=y(v);ctx.strokeStyle=COLOR.grid;ctx.beginPath();ctx.moveTo(L,yy);ctx.lineTo(R,yy);ctx.stroke();ctx.fillStyle=COLOR.muted;ctx.fillText(Math.round(v).toLocaleString(),R+8,yy);}
- // Draw selected timeframe OB and FVG zones only.
- const visible=a.zones.filter(z=>z.obIndex>=start&&z.obHigh>=min&&z.obLow<=max).slice(-8);
+ /* Only the selected timeframe's zones are drawn. OB ends at its FIRST wick tap. */
+ const visible=a.zones.filter(z=>z.obIndex>=start&&z.obHigh>=min&&z.obLow<=max).slice(-12);
  visible.forEach(z=>{
-  const xx=Math.max(L,x(z.obIndex-start)),yy=y(z.obHigh),hh=Math.max(2,y(z.obLow)-yy),bull=z.direction==="BULLISH",col=bull?COLOR.green:COLOR.red;
-  ctx.fillStyle=bull?"rgba(33,196,154,.19)":"rgba(239,89,108,.19)";ctx.fillRect(xx,yy,R-xx,hh);ctx.strokeStyle=col;ctx.strokeRect(xx,yy,R-xx,hh);
-  ctx.fillStyle=col;ctx.font="bold 13px system-ui";ctx.fillText(bull?"Bullish OB":"Bearish OB",Math.min(R-115,xx+6),yy+Math.max(12,hh/2));
+  const xx=Math.max(L,x(z.obIndex-start));
+  const right=z.firstTapIndex==null?R:Math.min(R,x(z.firstTapIndex-start));
+  const width=Math.max(1,right-xx),yy=y(z.obHigh),hh=Math.max(2,y(z.obLow)-yy),bull=z.direction==="BULLISH",col=bull?COLOR.green:COLOR.red;
+  ctx.fillStyle=bull?"rgba(33,196,154,.19)":"rgba(239,89,108,.19)";ctx.fillRect(xx,yy,width,hh);ctx.strokeStyle=col;ctx.strokeRect(xx,yy,width,hh);
+  ctx.fillStyle=col;ctx.font="bold 12px system-ui";ctx.fillText((bull?"Bull OB":"Bear OB")+(z.firstTapIndex==null?"":" · TAPPED"),Math.min(R-110,xx+5),yy+Math.max(12,hh/2));
   const fy=y(z.fvgHigh),fh=Math.max(2,y(z.fvgLow)-fy),fx=x(z.createdIndex-start);
-  if(z.fvgHigh>=min&&z.fvgLow<=max){ctx.fillStyle="rgba(168,120,255,.20)";ctx.fillRect(fx,fy,R-fx,fh);ctx.strokeStyle=COLOR.purple;ctx.strokeRect(fx,fy,R-fx,fh);}
+  if(z.fvgHigh>=min&&z.fvgLow<=max){ctx.fillStyle="rgba(168,120,255,.18)";ctx.fillRect(fx,fy,Math.max(1,R-fx),fh);ctx.strokeStyle=COLOR.purple;ctx.strokeRect(fx,fy,Math.max(1,R-fx),fh);}
+  if(z.firstTapIndex!=null&&z.firstTapIndex>=start){ctx.fillStyle=COLOR.amber;ctx.beginPath();ctx.arc(x(z.firstTapIndex-start),y(z.tapPrice),5,0,Math.PI*2);ctx.fill();}
  });
- function levels(list,label,color){list.filter(p=>p.level>=min&&p.level<=max).sort((a,b)=>b.count-a.count).slice(0,3).forEach(p=>{
-  const yy=y(p.level);ctx.strokeStyle=color;ctx.setLineDash([9,7]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(L,yy);ctx.lineTo(R,yy);ctx.stroke();ctx.setLineDash([]);
-  ctx.fillStyle=color;ctx.font="bold 13px system-ui";ctx.fillText(label+(p.count>1?" EQ":"")+" "+fmt(p.level),L+5,yy-12);
-  for(let i=p.lastIndex+3;i<a.b.length;i++){if(label==="BSL"?a.b[i][2]>p.level:a.b[i][3]<p.level){if(i>=start){ctx.beginPath();ctx.arc(x(i-start),yy,5,0,Math.PI*2);ctx.fill();}break;}}
- });}
+ function levels(list,label,color){
+  list.filter(p=>p.level>=min&&p.level<=max).sort((a,b)=>b.count-a.count).slice(0,3).forEach(p=>{
+   const yy=y(p.level);ctx.strokeStyle=color;ctx.setLineDash([9,7]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(L,yy);ctx.lineTo(R,yy);ctx.stroke();ctx.setLineDash([]);
+   ctx.fillStyle=color;ctx.font="bold 13px system-ui";ctx.fillText(label+(p.count>1?" EQ":"")+" "+fmt(p.level),L+5,yy-12);
+  });
+ }
  levels(a.p.bsl,"BSL",COLOR.red);levels(a.p.ssl,"SSL",COLOR.green);
  b.forEach((c,i)=>{const xx=x(i),bull=c[4]>=c[1],col=bull?COLOR.green:COLOR.red;ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(xx,y(c[2]));ctx.lineTo(xx,y(c[3]));ctx.stroke();ctx.fillRect(xx-Math.max(2,step*.3),y(Math.max(c[1],c[4])),Math.max(3,step*.6),Math.max(2,y(Math.min(c[1],c[4]))-y(Math.max(c[1],c[4]))));});
  if(a.s.index>=start&&a.s.level!==null){const yy=y(a.s.level),xx=x(a.s.index-start);ctx.strokeStyle=a.s.bias==="BULLISH"?COLOR.green:COLOR.red;ctx.setLineDash([7,5]);ctx.beginPath();ctx.moveTo(Math.max(L,xx-150),yy);ctx.lineTo(xx,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=ctx.strokeStyle;ctx.font="bold 14px system-ui";ctx.fillText(a.s.event,Math.max(L,xx-145),yy-16);}
  [0,Math.floor(b.length/3),Math.floor(2*b.length/3),b.length-1].forEach(i=>{ctx.fillStyle=COLOR.muted;ctx.font="12px system-ui";ctx.fillText(new Date(b[i][0]).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),x(i)-20,H-18);});
- $("chartInfo").textContent=a.tf+" chart · "+b.length+" completed candles · Only this timeframe's levels and zones are displayed.";
+ $("chartInfo").textContent=a.tf+" chart · "+b.length+" completed candles · OB boxes stop at first wick touch · Only this timeframe's levels and zones are displayed.";
 }
 function renderZones(a){
- const z=a.zones.slice(-12).reverse();$("zoneCount").textContent=z.length+" zones · "+a.tf;
- $("zones").innerHTML=z.length?z.map(q=>'<div class="item"><strong class="'+(q.direction==="BULLISH"?"bull":"bear")+'">'+q.direction+' OB + FVG</strong><br>OB: '+money(q.obLow)+' – '+money(q.obHigh)+'<br>FVG: '+money(q.fvgLow)+' – '+money(q.fvgHigh)+'<br>'+ (q.retestIndex>=0?"OB retested in loaded candles":"No retest detected in loaded candles")+'</div>').join(""):'<div class="empty">No qualifying OB/FVG zones found in loaded candles.</div>';
+ const z=a.zones.slice(-14).reverse();$("zoneCount").textContent=z.length+" zones · "+a.tf;
+ $("zones").innerHTML=z.length?z.map(q=>{
+  const tapped=q.firstTapIndex!=null;
+  return '<div class="item"><strong class="'+(q.direction==="BULLISH"?"bull":"bear")+'">'+q.direction+' OB + FVG</strong>'+
+   '<span class="tag '+(tapped?"wait":"")+'">'+(tapped?"TAPPED":"UNTOUCHED")+'</span>'+
+   '<br>OB: '+money(q.obLow)+' – '+money(q.obHigh)+' ('+q.obType+' candle)'+
+   '<br>FVG: '+money(q.fvgLow)+' – '+money(q.fvgHigh)+
+   '<br>'+(tapped?"First wick tap: "+new Date(a.b[q.firstTapIndex][0]).toLocaleString():"No wick tap in loaded candles")+
+   (a.tf==="15m"?(q.qualified?'<br><span class="bull">Liquidity cleared before first tap — setup qualified for M5 review</span>':'<br><span class="muted">Not entry-qualified: no matching prior M15 sweep found</span>'):"")+
+   '</div>';
+ }).join(""):'<div class="empty">No qualifying OB/FVG zones found in loaded candles.</div>';
 }
 function alertOnce(key,message){
- if(alertKeys.has(key))return;alertKeys.add(key);try{localStorage.setItem("hartleySMCAlerts",JSON.stringify([...alertKeys].slice(-100)));}catch(e){}
+ if(alertKeys.has(key))return;alertKeys.add(key);
+ try{const arr=[...alertKeys].slice(-250);alertKeys=new Set(arr);localStorage.setItem("hartleySMCAlerts",JSON.stringify(arr));}catch(e){}
  const box=$("alerts");if(box.querySelector(".empty"))box.innerHTML="";
  const item=document.createElement("div");item.className="item";item.textContent=new Date().toLocaleString()+" · "+message;box.prepend(item);
  if("Notification"in window&&Notification.permission==="granted")new Notification("BTC Hartley SMC",{body:message});
@@ -245,36 +308,28 @@ function checkAlerts(){
  const h=DATA.h4?.bias;
  if(h&&["BULLISH","BEARISH"].includes(h.bias))alertOnce("h4-"+h.bias+"-"+h.displacement,"New H4 "+h.bias+" sweep and displacement bias.");
  const a=DATA["15m"];
- if(a)for(const s of a.setups.slice(-4))alertOnce("m15-"+s.direction+"-"+s.retestIndex,s.direction+" M15 liquidity sweep followed by OB retest near "+money(s.obLow)+". Review M5 confirmation manually.");
+ if(a)for(const s of a.setups.slice(-8))alertOnce("m15-"+s.direction+"-"+s.firstTapIndex,s.direction+" M15 OB first wick tap after a qualifying liquidity sweep near "+money(s.obLow)+". Review M5 confirmation manually.");
  const m=DATA["5m"];
  if(m&&m.s.event!=="No new structure break")alertOnce("m5-"+m.s.event+"-"+m.s.index,"M5 "+m.s.event+" detected.");
 }
 async function refresh(){
  $("status").textContent="Loading";
- $("alerts").innerHTML=alertKeys.size?$("alerts").innerHTML:'<div class="empty">No new alerts.</div>';
  try{
-  const wanted=$("tf").value;
-  const tfs=["4h","1h","15m","5m",wanted];
-  const unique=[...new Set(tfs)];
+  const wanted=$("tf").value,unique=[...new Set(["4h","1h","15m","5m",wanted])];
   const results=await Promise.all(unique.map(async tf=>[tf,await candles(tf)]));
   for(const [tf,b] of results)DATA[tf]=analyse(tf,b);
   DATA.h4={...DATA["4h"],bias:h4Bias(DATA["4h"].b)};
-  renderPanel("h4",DATA.h4,DATA.h4.bias);
-  renderPanel("h1",DATA["1h"]);
-  renderPanel("m15",DATA["15m"]);
+  renderPanel("h4",DATA.h4,DATA.h4.bias);renderPanel("h1",DATA["1h"]);renderPanel("m15",DATA["15m"]);
   $("m5Bias").textContent=DATA["5m"].s.bias+" · "+DATA["5m"].s.event;
   $("m5Bias").className="bias "+(DATA["5m"].s.bias==="BULLISH"?"bull":DATA["5m"].s.bias==="BEARISH"?"bear":"");
-  $("m5Detail").textContent=DATA["5m"].s.why+" M5 is the confirmation timeframe; this dashboard does not place orders.";
-  const selected=DATA[wanted];draw(selected);renderZones(selected);checkAlerts();
-  $("status").textContent="Analysis updated";
-  $("analysisTime").textContent="Last analysis: "+new Date().toLocaleString()+" · Feed: "+source;
+  $("m5Detail").textContent=DATA["5m"].s.why+" M5 confirmation is shown for manual review; no orders are placed.";
+  draw(DATA[wanted]);renderZones(DATA[wanted]);checkAlerts();
+  $("status").textContent="Analysis updated";$("analysisTime").textContent="Last analysis: "+new Date().toLocaleString()+" · Feed: "+source;
  }catch(e){
-  $("status").textContent="Data error";
-  $("chartInfo").textContent="Could not load market candles: "+e.message+". Try refreshing.";
-  console.error(e);
+  $("status").textContent="Data error";$("chartInfo").textContent="Could not load market candles: "+e.message+". Try refreshing.";console.error(e);
  }
 }
-$("tf").addEventListener("change",()=>{if(DATA[$("tf").value]){draw(DATA[$("tf").value]);renderZones(DATA[$("tf").value]);}else refresh();});
+$("tf").addEventListener("change",()=>{const a=DATA[$("tf").value];if(a){draw(a);renderZones(a);}else refresh();});
 $("refresh").addEventListener("click",async()=>{await ticker();await refresh();});
 $("fullscreen").addEventListener("click",async()=>{const el=$("chartCard");try{if(!document.fullscreenElement)await el.requestFullscreen();else await document.exitFullscreen();}catch(e){$("chartInfo").textContent="Fullscreen is not supported by this browser."; }});
 $("notifications").addEventListener("click",async()=>{
@@ -282,9 +337,7 @@ $("notifications").addEventListener("click",async()=>{
  try{const p=await Notification.requestPermission();$("notificationStatus").textContent="Notification permission: "+p;}catch(e){$("notificationStatus").textContent="Could not request notification permission.";}
 });
 async function start(){await ticker();await refresh();}
-start();
-setInterval(ticker,30000);
-setInterval(refresh,60000);
+start();setInterval(ticker,30000);setInterval(refresh,60000);
 </script>
 </body>
 </html>
