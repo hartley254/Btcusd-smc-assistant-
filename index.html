@@ -533,6 +533,10 @@ ctx.lineWidth=1;
 }
 
 for(const e of a.liq.events.filter(e=>visible(e.i))){
+    // Draw the liquidity event here.
+}
+} // Close renderChart()
+
 function renderObs(a){
  const box=$("observations");box.replaceChildren();
  if(!a){$("count").textContent="0 observations";return;}
