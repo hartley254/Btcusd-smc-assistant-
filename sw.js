@@ -1,5 +1,5 @@
 
-const CACHE = "hartley-smc-educational-v2";
+const CACHE = "hartley-smc-educational-v3";
 const CACHE_PREFIX = "hartley-smc-educational-";
 
 const CORE = [
@@ -40,21 +40,45 @@ self.addEventListener("fetch", event => {
     url.origin !== self.location.origin
   ) return;
 
-  event.respondWith(
-    fetch(request)
-      .then(response => {
+  const isPage =
+    request.mode === "navigate" ||
+    url.pathname.endsWith("/index.html") ||
+    url.pathname.endsWith("/");
+
+  event.respondWith((async () => {
+    if (isPage) {
+      try {
+        const freshRequest = new Request(request, {
+          cache: "no-store"
+        });
+
+        const response = await fetch(freshRequest);
+
         if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE)
-            .then(cache => cache.put(request, copy));
+          const cache = await caches.open(CACHE);
+          await cache.put(request, response.clone());
         }
+
         return response;
-      })
-      .catch(() =>
-        caches.match(request)
-          .then(cached =>
-            cached || caches.match("./index.html")
-          )
-      )
-  );
+      } catch (error) {
+        const cached = await caches.match(request);
+        return cached ||
+          await caches.match("./index.html") ||
+          Response.error();
+      }
+    }
+
+    try {
+      const response = await fetch(request);
+
+      if (response.ok) {
+        const cache = await caches.open(CACHE);
+        await cache.put(request, response.clone());
+      }
+
+      return response;
+    } catch (error) {
+      return await caches.match(request) || Response.error();
+    }
+  })());
 });
