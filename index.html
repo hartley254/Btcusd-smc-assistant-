@@ -1165,8 +1165,6 @@ function renderSignal(a){
  direction.className="price "+
   (dir==="BULLISH"?"signal-buy":"signal-sell");
 
- detail.textContent=
-  a.tf+
   detail.textContent=
  a.tf+
  " · IDM swept at "+fmt(active.idm.level)+
@@ -1174,9 +1172,6 @@ function renderSignal(a){
  (active.target
   ?" · Target liquidity: "+fmt(active.target.level)
   :" · No opposing target identified")+".";
-  (active.target
-   ?" · Target liquidity: "+fmt(active.target.level)
-   :" · No opposing target identified")+".";
 }
  
  function renderContext(){
