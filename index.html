@@ -1167,10 +1167,13 @@ function renderSignal(a){
 
  detail.textContent=
   a.tf+
-  " · M15 "+active.sweep.type+
-  " sweep · First OB wick retest at "+
-  fmt(tap.c)+
-  " · M5: "+active.confirm+
+  detail.textContent=
+ a.tf+
+ " · IDM swept at "+fmt(active.idm.level)+
+ " · First OB touch at "+fmt(tap.c)+
+ (active.target
+  ?" · Target liquidity: "+fmt(active.target.level)
+  :" · No opposing target identified")+".";
   (active.target
    ?" · Target liquidity: "+fmt(active.target.level)
    :" · No opposing target identified")+".";
