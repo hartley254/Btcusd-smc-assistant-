@@ -1436,6 +1436,35 @@ function syntheticTests(){
  const mitigated=eqBars.map(x=>({...x}));mitigated[26]={...mitigated[26],h:111};
  if(liquidityEvents(mitigated,eqPts,fake,[],"5m").levels.some(x=>x.source==="EQH"))throw Error("Mitigated EQH rejection failed");
  if(liquidityEvents(eqBars,[eqPts[0]],fake,[],"5m").levels.some(x=>x.source==="SWING"))throw Error("Single-swing rejection failed");
+ 
+  // BSL identification and sweep test.
+  const bslBars=bars.map(x=>({...x}));
+  bslBars[20]={...bslBars[20],h:110};
+  bslBars[30]={...bslBars[30],h:110};
+  bslBars[40]={...bslBars[40],o:109,h:112,l:108,c:109};
+  const bslPts=[
+   {type:"high",i:20,level:110,confirmed:22},
+   {type:"high",i:30,level:110,confirmed:32}
+  ];
+  const bsl=liquidityEvents(bslBars,bslPts,fake,[],"5m");
+  if(!bsl.levels.some(p=>
+   p.side==="BSL"&&p.clearance?.type==="BSL"&&p.clearance.kind==="sweep"
+  ))throw Error("BSL identification or sweep failed");
+
+  // SSL identification and sweep test.
+  const sslBars=bars.map(x=>({...x}));
+  sslBars[20]={...sslBars[20],l:90};
+  sslBars[30]={...sslBars[30],l:90};
+  sslBars[40]={...sslBars[40],o:91,h:92,l:88,c:91};
+  const sslPts=[
+   {type:"low",i:20,level:90,confirmed:22},
+   {type:"low",i:30,level:90,confirmed:32}
+  ];
+  const ssl=liquidityEvents(sslBars,sslPts,fake,[],"5m");
+  if(!ssl.levels.some(p=>
+   p.side==="SSL"&&p.clearance?.type==="SSL"&&p.clearance.kind==="sweep"
+  ))throw Error("SSL identification or sweep failed");
+ 
  const sb=Array.from({length:40},(_,i)=>({time:t+i*300000,o:100,h:102,l:98,c:100,v:10}));
  sb[30]={...sb[30],o:100,h:114,l:99,c:113};sb[31]={...sb[31],o:102,h:103,l:101,c:102.5};sb[32]={...sb[32],o:104,h:110,l:104,c:109};
  const ss=structure(sb,[{type:"high",i:10,level:105,confirmed:12},{type:"high",i:20,level:110,confirmed:22}]);
