@@ -1310,49 +1310,47 @@ for(const s of signalStates){
   ?(buy?C.bull:C.bear)
   :"#788493";
 
- const tipY=buy
-  ?Math.min(bottom-6,y(b.l)+12)
-  :Math.max(top+6,y(b.h)-12);
+ 
+  const tipY=buy
+   ?Math.min(bottom-12*dpr,y(b.l)+18*dpr)
+   :Math.max(top+12*dpr,y(b.h)-18*dpr);
 
- const tailY=buy
-  ?tipY+16
-  :tipY-16;
+  const tailY=buy
+   ?tipY+30*dpr
+   :tipY-30*dpr;
 
- ctx.strokeStyle=color;
- ctx.fillStyle=color;
- ctx.lineWidth=isCurrent?2.5:1.5;
+  const arrowSize=12*dpr;
 
- // Arrow shaft.
- ctx.beginPath();
+  ctx.save();
+  ctx.strokeStyle=color;
+  ctx.fillStyle=color;
+  ctx.lineWidth=isCurrent?3*dpr:2*dpr;
+  ctx.lineCap="round";
+  ctx.lineJoin="round";
 
- ctx.moveTo(xx,tailY);
+  // Arrow shaft.
+  ctx.beginPath();
+  ctx.moveTo(xx,tailY);
+  ctx.lineTo(xx,buy?tipY+arrowSize:tipY-arrowSize);
+  ctx.stroke();
 
- ctx.lineTo(
-  xx,
-  buy?tipY+5:tipY-5
- );
+  // Larger arrowhead.
+  ctx.beginPath();
 
- ctx.stroke();
+  if(buy){
+   ctx.moveTo(xx,tipY);
+   ctx.lineTo(xx-arrowSize,tipY+arrowSize);
+   ctx.lineTo(xx+arrowSize,tipY+arrowSize);
+  }else{
+   ctx.moveTo(xx,tipY);
+   ctx.lineTo(xx-arrowSize,tipY-arrowSize);
+   ctx.lineTo(xx+arrowSize,tipY-arrowSize);
+  }
 
- // Arrow head.
- ctx.beginPath();
+  ctx.closePath();
+  ctx.fill();
 
- if(buy){
-
-  ctx.moveTo(xx,tipY);
-  ctx.lineTo(xx-6,tipY+8);
-  ctx.lineTo(xx+6,tipY+8);
-
- }else{
-
-  ctx.moveTo(xx,tipY);
-  ctx.lineTo(xx-6,tipY-8);
-  ctx.lineTo(xx+6,tipY-8);
-
- }
-
- ctx.closePath();
- ctx.fill();
+  ctx.restore();
 
  // Distinguish current from historical signals.
  drawChartLabel(
