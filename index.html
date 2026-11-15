@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+a<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -686,18 +686,18 @@ function liquidityEvents(bars,pts,st,gaps,tf){
   }
 
   const entry={
-   type:pool.type,
-   level,
-   first:pool.first,
-   last:pool.last,
-   count:pool.count||1,
-   equal:!!pool.equal,
-   clearance,
-   source:pool.source||"SWING",
-   score:pool.score||0,
-   grade:(pool.score||0)>=4?"PRIMARY":"SECONDARY"
-  };
-
+ type:pool.type,
+ side:pool.type==="high"?"BSL":"SSL",
+ level,
+ first:pool.first,
+ last:pool.last,
+ count:pool.count||1,
+ equal:!!pool.equal,
+ clearance,
+ source:pool.source||"SWING",
+ score:pool.score||0,
+ grade:(pool.score||0)>=4?"PRIMARY":"SECONDARY"
+};
   levels.push(entry);
   if(clearance)events.push({...clearance,source:entry.source});
  };
@@ -805,67 +805,6 @@ function liquidityEvents(bars,pts,st,gaps,tf){
    });
   }
  }
-
- // Previous completed UTC day/week extremes.
- const addPeriod=(unit,label)=>{
-  const groups=new Map();
-
-  for(let i=0;i<bars.length;i++){
-   const t=bars[i].time;
-   const day=Math.floor(t/86400000);
-   const weekday=(new Date(t).getUTCDay()+6)%7;
-
-   const bucket=unit==="day"
-    ?day*86400000
-    :(day-weekday)*86400000;
-
-   if(!groups.has(bucket))groups.set(bucket,[]);
-   groups.get(bucket).push(i);
-  }
-
-  const keys=[...groups.keys()].sort((a,b)=>a-b);
-  if(keys.length<2)return;
-
-  const indices=groups.get(keys[keys.length-2]);
-  if(!indices?.length)return;
-
-  const last=indices[indices.length-1];
-  const periodMs=unit==="day"?86400000:7*86400000;
-  const expected=Math.floor(periodMs/(SEC[tf]*1000));
-  if(indices.length!==expected||bars[indices[0]].time!==keys[keys.length-2]||bars[last].time+SEC[tf]*1000<keys[keys.length-2]+periodMs)return;
-
-  const high=Math.max(...indices.map(i=>bars[i].h));
-  const low=Math.min(...indices.map(i=>bars[i].l));
-
-  const highIndex=indices.find(i=>bars[i].h===high);
-  const lowIndex=indices.find(i=>bars[i].l===low);
-  const tol=Math.max(atrAt(last)*CFG.liquidityToleranceAtr,high*.00002);
-  const hasHigh=levels.some(p=>p.type==="high"&&Math.abs(p.level-high)<=tol);
-  const hasLow=levels.some(p=>p.type==="low"&&Math.abs(p.level-low)<=tol);
-
-  if(!hasHigh)addPool({
-   type:"high",
-   level:high,
-   first:highIndex,
-   last,
-   count:1,
-   score:6+tfWeight,
-   source:label==="PD"?"PDH":"PWH"
-  });
-
-  if(!hasLow)addPool({
-   type:"low",
-   level:low,
-   first:lowIndex,
-   last,
-   count:1,
-   score:6+tfWeight,
-   source:label==="PD"?"PDL":"PWL"
-  });
- };
-
- addPeriod("day","PD");
- addPeriod("week","PW");
 
  const ranked=levels.sort((a,b)=>b.score-a.score||Math.abs(a.level-bars[lastIndex].c)-Math.abs(b.level-bars[lastIndex].c));
  const active=ranked.filter(p=>p.clearance===null).slice(0,CFG.maxActiveLiquidityPools);
@@ -1289,8 +1228,8 @@ function drawChartLabel(text,px,py,color,align="center"){
  ctx.setLineDash([]);
 
 drawChartLabel(
- pool.source+" · "+(pool.clearance?"TAKEN":"ACTIVE"),
- Math.min(ex+3,right-95),
+ pool.side,
+ Math.min(ex+3,right-45),
  yy-8,
  ctx.strokeStyle,
  "left"
@@ -1434,12 +1373,10 @@ function renderObs(a){
  for(const s of states.slice(-12).reverse()){const ob=s.ob;items.push({title:s.state,detail:ob.dir+" OB "+fmt(ob.lo)+"–"+fmt(ob.hi)+" · formed "+timeLabel(ob.createdTime)+(ob.firstTap!==null?" · first tap "+timeLabel(a.bars[ob.firstTap].time):" · not yet tapped")+(s.target?" · next liquidity target "+fmt(s.target.level):" · no visible un-cleared opposing target")+(s.idm?" · IDM swept at "+fmt(s.idm.level)+" · "+timeLabel(s.idm.time):"")});}
  for(const e of a.st.events.slice(-3).reverse())items.push({title:e.dir+" "+e.kind,detail:fmt(e.level)+" · "+timeLabel(a.bars[e.i].time)});
  for(const p of a.liq.levels.filter(p=>p.clearance===null).slice(0,5))
- items.push({
-  title:p.grade+" "+p.source+" · "+(p.type==="high"?"BSL":"SSL"),
-  detail:fmt(p.level)+" · "+
-   (p.equal?p.count+" aligned swing highs/lows":"displacement-backed structural extreme")+
-   " · untouched"
- });
+items.push({
+ title:p.side,
+ detail:fmt(p.level)+" · untouched"
+});
  for(const e of a.liq.events.filter(e=>e.kind==="sweep").slice(-3).reverse())
  items.push({title:a.tf+" "+e.type+" sweep",detail:fmt(e.level)+" · "+timeLabel(e.time)});
  $("count").textContent=items.length+" observations";
