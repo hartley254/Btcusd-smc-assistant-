@@ -1431,7 +1431,7 @@ function renderObs(a){
  const box=$("observations");box.replaceChildren();
  if(!a){$("count").textContent="0 observations";return;}
  const states=setupStates(a),items=[];
- for(const s of states.slice(-12).reverse()){const ob=s.ob;items.push({title:s.state,detail:ob.dir+" OB "+fmt(ob.lo)+"–"+fmt(ob.hi)+" · formed "+timeLabel(ob.createdTime)+(ob.firstTap!==null?" · first tap "+timeLabel(a.bars[ob.firstTap].time):" · not yet tapped")+(s.sweep?" · "+a.tf+" "+s.sweep.type+" sweep "+timeLabel(s.sweep.time):"")+(s.target?" · next liquidity target "+fmt(s.target.level):" · no visible un-cleared opposing target")+(s.idm?" · IDM swept at "+fmt(s.idm.level)+" · "+timeLabel(s.idm.time):"")});}
+ for(const s of states.slice(-12).reverse()){const ob=s.ob;items.push({title:s.state,detail:ob.dir+" OB "+fmt(ob.lo)+"–"+fmt(ob.hi)+" · formed "+timeLabel(ob.createdTime)+(ob.firstTap!==null?" · first tap "+timeLabel(a.bars[ob.firstTap].time):" · not yet tapped")+(s.target?" · next liquidity target "+fmt(s.target.level):" · no visible un-cleared opposing target")+(s.idm?" · IDM swept at "+fmt(s.idm.level)+" · "+timeLabel(s.idm.time):"")});}
  for(const e of a.st.events.slice(-3).reverse())items.push({title:e.dir+" "+e.kind,detail:fmt(e.level)+" · "+timeLabel(a.bars[e.i].time)});
  for(const p of a.liq.levels.filter(p=>p.clearance===null).slice(0,5))
  items.push({
