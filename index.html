@@ -67,7 +67,7 @@ const $=id=>document.getElementById(id);
 const TF=["1m","5m","15m","1h","4h"],SEC={"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400};
 const LIMIT=420,HOUR=3600000,FOUR_HOURS=14400000;
 const C={bg:"#080e17",grid:"#263649",muted:"#9aabba",bull:"#13b99a",bear:"#ed5266",fvg:"#9b65ef",bsl:"#f05a66",ssl:"#24cf83",bos:"#9ce6b5",warn:"#f0bc63"};
-const CFG={pivotLeft:2,pivotRight:2,atrPeriod:14,displacementAtr:1.15,closeStrength:.72,fvgMinAtr:.12,sweepBufferAtr:.015,liquidityToleranceAtr:.12,maxSwingAge:380};
+const CFG={pivotLeft:2,pivotRight:2,atrPeriod:14,displacementAtr:1.15,closeStrength:.72,fvgMinAtr:.12,liquidityToleranceAtr:.08,maxSwingAge:380,liquidityDisplacementWindow:8,minLiquidityScore:2};
 const S={data:Object.create(null),events:[],seen:new Set(),errors:Object.create(null),updated:Object.create(null),busy:false};
 const fmt=n=>Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:2}):"—";
 const timeLabel=t=>new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
@@ -140,19 +140,219 @@ function structure(bars,pts){
  for(let i=1;i<lows.length;i++)labels.push({type:"low",i:lows[i].i,label:lows[i].level>lows[i-1].level?"HL":"LL"});
  return {events,bias,last:recent,labels:labels.sort((a,b)=>a.i-b.i),highs,lows};
 }
-function liquidityEvents(bars,pts){
- const events=[],levels=[],vol=atr(bars,bars.length-1)||bars.at(-1).c*.001;
- for(const type of ["high","low"]){const ps=pts.filter(p=>p.type===type),groups=[];
-  for(const p of ps){let g=groups.find(x=>Math.abs(x.level-p.level)<=Math.max(vol*CFG.liquidityToleranceAtr,p.level*.0001));if(!g){g={members:[],level:p.level};groups.push(g);}g.members.push(p);g.level=g.members.reduce((s,x)=>s+x.level,0)/g.members.length;}
-  for(const g of groups){const last=Math.max(...g.members.map(p=>p.confirmed));if(bars.length-1-last>CFG.maxSwingAge)continue;
-   const eq=g.members.length>1;levels.push({type,level:g.level,first:Math.min(...g.members.map(p=>p.i)),last,count:g.members.length,equal:eq,clearance:null});
-   const buffer=Math.max(vol*CFG.sweepBufferAtr,g.level*.000025);
-   for(let i=last+1;i<bars.length;i++){const b=bars[i],breach=type==="high"?b.h>g.level+buffer:b.l<g.level-buffer;if(!breach)continue;
-    const closeBeyond=type==="high"?b.c>g.level:b.c<g.level,swept=type==="high"?b.c<g.level:b.c>g.level,kind=swept?"sweep":closeBeyond?"close beyond":"wick through";
-    const ev={type:type==="high"?"BSL":"SSL",level:g.level,i,time:b.time,kind,extreme:type==="high"?b.h:b.l,equal:eq};events.push(ev);levels.at(-1).clearance=ev;break;
+
+function liquidityEvents(bars,pts,st,gaps,tf){
+ const levels=[],events=[],lastIndex=bars.length-1;
+ const tfWeight={"4h":2,"1h":1,"15m":.5,"5m":0,"1m":0}[tf]||0;
+ const atrAt=i=>atr(bars,i)||bars[i].c*.001;
+
+ const addPool=pool=>{
+  const level=pool.level,from=Math.max(0,pool.last+1);
+  let clearance=null;
+
+  // Any actual trade-through consumes the liquidity level.
+  for(let i=from;i<bars.length;i++){
+   const b=bars[i];
+   const breach=pool.type==="high"?b.h>level:b.l<level;
+   if(!breach)continue;
+
+   const swept=pool.type==="high"?b.c<level:b.c>level;
+   clearance={
+    type:pool.type==="high"?"BSL":"SSL",
+    level,i,time:b.time,
+    kind:swept?"sweep":"close beyond",
+    extreme:pool.type==="high"?b.h:b.l,
+    equal:!!pool.equal,
+    source:pool.source||"SWING"
+   };
+   break;
+  }
+
+  const entry={
+   type:pool.type,
+   level,
+   first:pool.first,
+   last:pool.last,
+   count:pool.count||1,
+   equal:!!pool.equal,
+   clearance,
+   source:pool.source||"SWING",
+   score:pool.score||0,
+   grade:(pool.score||0)>=4?"PRIMARY":"SECONDARY"
+  };
+
+  levels.push(entry);
+  if(clearance)events.push({...clearance,source:entry.source});
+ };
+
+ // A single swing requires displacement.
+ // Two or more aligned swings can qualify as EQH/EQL.
+ for(const type of ["high","low"]){
+  const ps=pts.filter(p=>
+   p.type===type&&
+   p.i>=CFG.atrPeriod&&
+   lastIndex-p.confirmed<=CFG.maxSwingAge
+  );
+
+  const groups=[];
+
+  for(const p of ps){
+   const tolerance=Math.max(
+    atrAt(p.i)*CFG.liquidityToleranceAtr,
+    p.level*.00002
+   );
+
+   let g=groups.find(x=>
+    Math.abs(x.anchor-p.level)<=tolerance
+   );
+
+   if(!g){
+    g={
+     members:[],
+     anchor:p.level,
+     level:p.level
+    };
+    groups.push(g);
    }
+
+   g.members.push(p);
+   g.level=g.members.reduce((sum,x)=>sum+x.level,0)/g.members.length;
+  }
+
+  for(const g of groups){
+   const members=g.members.sort((a,b)=>a.i-b.i);
+   const first=members[0];
+   const last=members[members.length-1];
+   const equal=members.length>=2;
+
+   // Reject an equal-level cluster if its first level was
+   // already traded through before the final point formed.
+   if(equal){
+    let previouslyTaken=false;
+
+    for(let k=first.confirmed+1;k<last.confirmed;k++){
+     if(type==="high"
+      ?bars[k].h>first.level
+      :bars[k].l<first.level){
+      previouslyTaken=true;
+      break;
+     }
+    }
+
+    if(previouslyTaken)continue;
+   }
+
+   const label=st.labels.find(x=>
+    x.i===first.i&&x.type===type
+   )?.label;
+
+   const dir=type==="high"?"BEARISH":"BULLISH";
+   let displacement=null;
+
+   for(const p of members){
+    const stop=Math.min(
+     bars.length-1,
+     p.confirmed+CFG.liquidityDisplacementWindow
+    );
+
+    for(let j=p.confirmed+1;j<=stop;j++){
+     if(displacementAt(bars,j,dir,gaps,st.events)){
+      displacement=j;
+      break;
+     }
+    }
+
+    if(displacement!==null)break;
+   }
+
+   const structural=type==="high"
+    ?label==="HH"
+    :label==="LL";
+
+   const score=
+    (equal?4:0)+
+    (displacement!==null?2:0)+
+    (structural?1:0)+
+    tfWeight;
+
+   if(score<CFG.minLiquidityScore)continue;
+
+   addPool({
+    type,
+    level:g.level,
+    first:first.i,
+    last:last.confirmed,
+    count:members.length,
+    equal,
+    score,
+    source:equal
+     ?(type==="high"?"EQH":"EQL")
+     :"SWING"
+   });
   }
  }
+
+ // Previous completed UTC day/week extremes.
+ const addPeriod=(unit,label)=>{
+  const groups=new Map();
+
+  for(let i=0;i<bars.length;i++){
+   const t=bars[i].time;
+   const day=Math.floor(t/86400000);
+   const weekday=(new Date(t).getUTCDay()+6)%7;
+
+   const bucket=unit==="day"
+    ?day*86400000
+    :(day-weekday)*86400000;
+
+   if(!groups.has(bucket))groups.set(bucket,[]);
+   groups.get(bucket).push(i);
+  }
+
+  const keys=[...groups.keys()].sort((a,b)=>a-b);
+  if(keys.length<2)return;
+
+  const indices=groups.get(keys[keys.length-2]);
+  if(!indices?.length)return;
+
+  const last=indices[indices.length-1];
+
+  const high=Math.max(...indices.map(i=>bars[i].h));
+  const low=Math.min(...indices.map(i=>bars[i].l));
+
+  const highIndex=indices.find(i=>bars[i].h===high);
+  const lowIndex=indices.find(i=>bars[i].l===low);
+
+  addPool({
+   type:"high",
+   level:high,
+   first:highIndex,
+   last,
+   count:1,
+   score:6+tfWeight,
+   source:label==="PD"?"PDH":"PWH"
+  });
+
+  addPool({
+   type:"low",
+   level:low,
+   first:lowIndex,
+   last,
+   count:1,
+   score:6+tfWeight,
+   source:label==="PD"?"PDL":"PWL"
+  });
+ };
+
+ addPeriod("day","PD");
+ addPeriod("week","PW");
+
+ return {
+  events:events.sort((a,b)=>a.i-b.i),
+  levels:levels.sort((a,b)=>b.score-a.score)
+ };
+}
+
  return {events:events.sort((a,b)=>a.i-b.i),levels};
 }
 function fvgList(bars){
@@ -188,7 +388,7 @@ function detectOrderBlocks(bars,gaps,st){
 function analyse(tf,bars){
  if(!Array.isArray(bars)||bars.length<35)throw Error("At least 35 completed candles required for "+tf);
  for(const b of bars)if(![b.time,b.o,b.h,b.l,b.c,b.v].every(Number.isFinite)||!validOHLC(b.o,b.h,b.l,b.c,b.v))throw Error("Invalid OHLC candle in "+tf);
- const pts=pivots(bars),st=structure(bars,pts),liq=liquidityEvents(bars,pts),gaps=fvgList(bars),zones=detectOrderBlocks(bars,gaps,st);
+ const pts=pivots(bars),st=structure(bars,pts),gaps=fvgList(bars),liq=liquidityEvents(bars,pts,st,gaps,tf),zones=detectOrderBlocks(bars,gaps,st);
  return {tf,bars,pts,st,liq,gaps,zones};
 }
 function h4Bias(a){
@@ -277,9 +477,38 @@ function renderChart(canvas,a){
   ctx.fillRect(sx,yt,ex-sx,Math.max(2,yb-yt));ctx.strokeStyle=color;ctx.strokeRect(sx,yt,ex-sx,Math.max(2,yb-yt));
   if(ob.firstTap!==null&&visible(ob.firstTap)){ctx.fillStyle=C.warn;ctx.fillText("FIRST TAP",x(ob.firstTap-offset),yt-8);}
  }
- for(const pool of a.liq.levels){if(pool.level<min||pool.level>max)continue;const clear=pool.clearance?.i??a.bars.length-1,sx=x(Math.max(offset,pool.first)-offset),ex=Math.max(sx+3,x(clamp(clear-offset,0,bars.length-1))),yy=y(pool.level);
-  ctx.strokeStyle=pool.type==="high"?C.bsl:C.ssl;ctx.setLineDash([7,5]);ctx.beginPath();ctx.moveTo(sx,yy);ctx.lineTo(ex,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=ctx.strokeStyle;ctx.textAlign="left";ctx.fillText((pool.type==="high"?"BSL":"SSL")+(pool.equal?" EQ":""),Math.min(ex+3,right-45),yy-8);}
- const cw=Math.max(2,Math.min(9,step*.56));bars.forEach((b,i)=>{const xx=x(i),color=b.c>=b.o?C.bull:C.bear;ctx.strokeStyle=color;ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(xx,y(b.h));ctx.lineTo(xx,y(b.l));ctx.stroke();ctx.fillRect(xx-cw/2,Math.min(y(b.o),y(b.c)),cw,Math.max(2,Math.abs(y(b.c)-y(b.o))));});
+ for(const pool of a.liq.levels){
+ if(pool.level<min||pool.level>max)continue;
+
+ const clear=pool.clearance?.i??a.bars.length-1;
+ const sx=x(Math.max(offset,pool.first)-offset);
+ const ex=Math.max(
+  sx+3,
+  x(clamp(clear-offset,0,bars.length-1))
+ );
+ const yy=y(pool.level);
+
+ ctx.strokeStyle=pool.type==="high"?C.bsl:C.ssl;
+ ctx.lineWidth=pool.grade==="PRIMARY"?2:1;
+ ctx.setLineDash([7,5]);
+
+ ctx.beginPath();
+ ctx.moveTo(sx,yy);
+ ctx.lineTo(ex,yy);
+ ctx.stroke();
+
+ ctx.setLineDash([]);
+ ctx.fillStyle=ctx.strokeStyle;
+ ctx.textAlign="left";
+
+ ctx.fillText(
+  pool.source+" · "+(pool.clearance?"TAKEN":"ACTIVE"),
+  Math.min(ex+3,right-95),
+  yy-8
+ );
+
+ ctx.lineWidth=1;
+ }
  for(const e of a.st.events.filter(e=>visible(e.i)).slice(-5)){const xx=x(e.i-offset),yy=y(e.level);ctx.strokeStyle=C.bos;ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(Math.max(left,xx-w*.12),yy);ctx.lineTo(xx,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=C.bos;ctx.textAlign="left";ctx.fillText(e.kind,Math.max(left,xx-w*.12),yy-9);}
  for(const e of a.liq.events.filter(e=>visible(e.i))){const xx=x(e.i-offset),yy=y(e.extreme);ctx.fillStyle=e.type==="BSL"?C.bear:C.ssl;ctx.beginPath();ctx.arc(xx,yy,4,0,Math.PI*2);ctx.fill();}
  ctx.fillStyle=C.muted;ctx.textAlign="center";[0,Math.floor(bars.length/3),Math.floor(2*bars.length/3),bars.length-1].forEach(i=>ctx.fillText(new Date(bars[i].time).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),x(i),h*.94));
@@ -288,9 +517,27 @@ function renderObs(a){
  if(!a)return;const states=setupStates(a,S.data["5m"]),items=[];
  for(const s of states.slice(-12).reverse()){const ob=s.ob;items.push({title:s.state,detail:ob.dir+" OB "+fmt(ob.lo)+"–"+fmt(ob.hi)+" · formed "+timeLabel(ob.createdTime)+(ob.firstTap!==null?" · first tap "+timeLabel(a.bars[ob.firstTap].time):" · not yet tapped")+(s.sweep?" · "+a.tf+" "+s.sweep.type+" sweep "+timeLabel(s.sweep.time):"")+(s.target?" · next liquidity target "+fmt(s.target.level):" · no visible un-cleared opposing target")+(s.state.startsWith("QUALIFIED")?" · M5: "+s.confirm:"")});}
  for(const e of a.st.events.slice(-3).reverse())items.push({title:e.dir+" "+e.kind,detail:fmt(e.level)+" · "+timeLabel(a.bars[e.i].time)});
- for(const e of a.liq.events.filter(e=>e.kind==="sweep").slice(-3).reverse())items.push({title:a.tf+" "+e.type+" sweep",detail:fmt(e.level)+" · "+timeLabel(e.time)});
- $("count").textContent=items.length+" observations";const box=$("observations");box.replaceChildren();
- if(!items.length){const d=document.createElement("div");d.className="item";d.textContent="No qualifying recent observations.";box.append(d);return;}
+ for(const p of a.liq.levels.filter(p=>p.clearance===null).slice(0,5))
+ items.push({
+  title:p.grade+" "+p.source+" · "+(p.type==="high"?"BSL":"SSL"),
+  detail:fmt(p.level)+" · "+
+   (p.equal?p.count+" aligned swing highs/lows":"displacement-backed structural extreme")+
+   " · untouched"
+ });
+
+for(const p of a.liq.levels.filter(p=>p.clearance===null).slice(0,5))
+ items.push({
+  title:p.grade+" "+p.source+" · "+(p.type==="high"?"BSL":"SSL"),
+  detail:fmt(p.level)+" · "+
+   (p.equal?p.count+" aligned swing highs/lows":"displacement-backed structural extreme")+
+   " · untouched"
+ });
+
+for(const e of a.liq.events.filter(e=>e.kind==="sweep").slice(-3).reverse())
+ items.push({
+  title:a.tf+" "+e.type+" sweep",
+  detail:fmt(e.level)+" · "+timeLabel(e.time)
+});
  for(const v of items.slice(0,12)){const d=document.createElement("div"),s=document.createElement("strong"),t=document.createElement("div");d.className="item";s.textContent=v.title;t.className="detail";t.textContent=v.detail;d.append(s,t);box.append(d);}
 }
 function renderSelected(){
@@ -309,6 +556,48 @@ function syntheticTests(){
  const a=analyse("5m",b);if(a.bars.length!==100)throw Error("Candle-analysis test failed");
  const invalid=[...b];invalid[20]={...invalid[20],h:0};let rejected=false;try{analyse("5m",invalid);}catch{rejected=true;}if(!rejected)throw Error("Invalid OHLC test failed");
  const zone={lo:100,hi:110},wick={h:100.01,l:99.5};if(!(wick.h>=zone.lo&&wick.l<=zone.hi))throw Error("Wick-touch test failed");
+ const lb=Array.from({length:40},(_,i)=>({
+ time:t+i*300000,o:100,h:101,l:99,c:100,v:10
+}));
+
+lb[20]={...lb[20],h:110};
+lb[24]={...lb[24],o:100,c:96,h:100,l:95};
+
+const lp=[
+ {type:"high",i:20,level:110,confirmed:22}
+];
+
+const ls={
+ labels:[{type:"high",i:20,label:"HH"}],
+ events:[]
+};
+
+const lg=[{i:24,dir:"BEARISH"}];
+
+const active=liquidityEvents(lb,lp,ls,lg,"5m");
+
+if(!active.levels.some(x=>x.type==="high"&&x.clearance===null))
+ throw Error("Untouched structural liquidity test failed");
+
+lb[30]={...lb[30],o:109,c:109.5,h:110.5,l:108.5};
+
+const taken=liquidityEvents(lb,lp,ls,lg,"5m");
+
+if(!taken.levels.some(x=>x.type==="high"&&x.clearance&&x.clearance.i===30))
+ throw Error("Liquidity mitigation test failed");
+
+// Equal highs must be grouped into one pool.
+lb[30]={...lb[30],h:110};
+
+const eqPts=[
+ {type:"high",i:20,level:110,confirmed:22},
+ {type:"high",i:30,level:110,confirmed:32}
+];
+
+const eq=liquidityEvents(lb,eqPts,ls,[],"5m");
+
+if(!eq.levels.some(x=>x.equal&&x.count===2))
+ throw Error("Equal-high grouping test failed");
  console.info("Basic synthetic checks passed. These do not validate profitability or every SMC edge case.");
 }
 $("tf").addEventListener("change",renderSelected);
