@@ -455,7 +455,28 @@ const sweeps=sweepSource.liq.events.filter(e=>e.kind==="sweep"),out=[];
  }
  return out;
 }
-function scanEvents(a){
+function isActiveSetup(s){
+ return !!(
+  s&&
+  s.sweep&&
+  s.ob&&
+  s.ob.firstTap!==null&&
+  s.state.startsWith("QUALIFIED")&&
+  s.ob.invalid===null&&
+  s.valid&&
+  !(s.target&&s.target.clearance)
+ );
+}
+
+function latestActiveSetup(states,a){
+ return states
+  .filter(isActiveSetup)
+  .sort((x,y)=>
+   a.bars[y.ob.firstTap].time-
+   a.bars[x.ob.firstTap].time
+  )[0]||null;
+}
+ function scanEvents(a){
  const recent=a.bars.length-3;
  for(const e of a.liq.events)if(e.i>=recent)emit(a.tf+"-liq-"+e.time,a.tf+" "+e.type+" "+e.kind+" at "+fmt(e.level));
  for(const e of a.st.events)if(e.i>=recent)emit(a.tf+"-structure-"+a.bars[e.i].time,a.tf+" "+e.dir+" "+e.kind);
@@ -482,6 +503,7 @@ function renderEvents(){
  for(const e of S.events){const d=document.createElement("div");d.className="item";d.textContent=timeLabel(e.t)+" · "+e.msg;box.append(d);}
 }
 function renderSignal(a){
+
  const badge=$("signalBadge");
  const direction=$("signalDirection");
  const detail=$("signalDetail");
@@ -492,33 +514,28 @@ function renderSignal(a){
  if(!a){
   badge.textContent="WAIT";
   direction.textContent="WAIT";
-  detail.textContent="Waiting for "+$("tf").value+" analysis.";
+  detail.textContent=
+   "Waiting for "+$("tf").value+" analysis.";
   return;
  }
 
  const states=setupStates(a,S.data["5m"]);
-
- const candidates=states
-  .filter(s=>s.sweep&&s.ob.firstTap!==null)
-  .sort((x,y)=>
-   a.bars[y.ob.firstTap].time-a.bars[x.ob.firstTap].time
-  );
-
- const active=candidates.find(s=>
-  s.state.startsWith("QUALIFIED")&&
-  s.ob.invalid===null&&
-  s.valid&&
-  !(s.target&&s.target.clearance)
- );
+ const active=latestActiveSetup(states,a);
 
  if(!active){
+
   badge.textContent="WAIT";
   direction.textContent="WAIT";
 
-  const latest=candidates[0];
+  const previous=states
+   .filter(s=>s.sweep&&s.ob.firstTap!==null)
+   .sort((x,y)=>
+    a.bars[y.ob.firstTap].time-
+    a.bars[x.ob.firstTap].time
+   )[0];
 
-  detail.textContent=latest
-   ? "No active qualified setup. Check invalidation or target status."
+  detail.textContent=previous
+   ? "No active setup. The latest qualified setup is invalidated or its target has been reached."
    : "Waiting for M15 liquidity sweep and qualifying OB retest.";
 
   return;
@@ -547,6 +564,7 @@ function renderSignal(a){
    ?" · Target liquidity: "+fmt(active.target.level)
    :" · No opposing target identified")+".";
 }
+ 
  function renderContext(){
  const h=h4Bias(S.data["4h"]);$("h4").textContent=h.bias;$("h4").style.color=h.bias==="BULLISH"?C.bull:h.bias==="BEARISH"?C.bear:C.muted;$("biasInfo").textContent=h.reason;
  const one=S.data["1h"];if(one){$("h1").textContent=one.st.bias+" structure";$("h1").style.color=one.st.bias==="BULLISH"?C.bull:one.st.bias==="BEARISH"?C.bear:C.muted;}
