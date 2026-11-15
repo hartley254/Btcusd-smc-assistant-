@@ -906,23 +906,35 @@ function detectOrderBlocks(bars,gaps,st){
 }
  
 function findIDMForOB(a,ob){
- if(ob.firstTap===null)return null;
-
  const dir=ob.dir;
  const type=dir==="BEARISH"?"high":"low";
- const tap=ob.firstTap;
+ const last=a.bars.length-1;
+
+ // Never search beyond the first OB touch.
+ let end=ob.firstTap!==null?ob.firstTap:last;
+
+ // If the OB was invalidated before its first touch,
+ // do not allow later candles to qualify it.
+ if(ob.invalid!==null&&
+    (ob.firstTap===null||ob.invalid<ob.firstTap)){
+  end=Math.min(end,ob.invalid-1);
+ }
+
+ if(end<=ob.created)return null;
 
  const candidates=a.pts.filter(p=>
   p.type===type&&
   p.i>ob.created&&
-  p.confirmed<tap&&
-  (dir==="BEARISH"?p.level<ob.lo:p.level>ob.hi)
+  p.confirmed<end&&
+  (dir==="BEARISH"
+   ?p.level<ob.lo
+   :p.level>ob.hi)
  );
 
  const swept=[];
 
  for(const p of candidates){
-  for(let i=p.confirmed+1;i<=tap;i++){
+  for(let i=p.confirmed+1;i<=end;i++){
    const taken=dir==="BEARISH"
     ?a.bars[i].h>p.level
     :a.bars[i].l<p.level;
@@ -970,8 +982,7 @@ function emit(key,msg){
  if(S.seen.has(key))return;S.seen.add(key);S.events.unshift({t:Date.now(),msg});S.events=S.events.slice(0,12);renderEvents();
  if("Notification"in window&&Notification.permission==="granted"){try{new Notification("BTC Hartley SMC",{body:msg,tag:key});}catch(e){console.warn(e);}}
 }
-
-function setupStates(selected){
+ function setupStates(selected){
  if(!selected)return[];
 
  const out=[];
@@ -979,6 +990,7 @@ function setupStates(selected){
  for(const ob of selected.zones){
   const tap=ob.firstTap;
   const dir=ob.dir;
+
   const valid=ob.invalid===null||
    (tap!==null&&ob.invalid>tap);
 
@@ -987,16 +999,17 @@ function setupStates(selected){
 
   let state="OB detected";
 
-  if(idm)state="IDM swept";
-
-  if(isTapped&&idm){
+  if(ob.invalid!==null&&
+     (tap===null||ob.invalid<tap)){
+   state="Invalidated before first touch";
+  }else if(isTapped&&idm){
    state=valid
     ?"QUALIFIED · IDM swept and first OB tap"
-    :"QUALIFIED · retest then invalidated";
+    :"QUALIFIED · IDM swept and first OB tap · later invalidated";
   }else if(isTapped){
    state="Tapped · no qualifying IDM sweep";
-  }else if(ob.invalid!==null){
-   state="Invalidated before retest";
+  }else if(idm){
+   state="IDM swept · waiting for first OB touch";
   }
 
   const targets=selected.liq.levels.filter(p=>
@@ -1058,16 +1071,41 @@ function latestActiveSetup(states,a){
   if(ob.invalid!==null&&ob.invalid>=recent)emit(a.tf+"-invalid-"+ob.id,a.tf+" "+ob.dir+" OB invalidated.");}
 }
 function scanQualifiedSetups(){
- const m5=S.data["5m"];
- for(const tf of TF){const a=S.data[tf];if(!a)continue;
-  for(const s of setupStates(a,m5)){if(!s.state.startsWith("QUALIFIED")||s.ob.firstTap===null)continue;
+ for(const tf of TF){
+  const a=S.data[tf];
+  if(!a)continue;
+
+  for(const s of setupStates(a)){
+   if(
+    !s.state.startsWith("QUALIFIED")||
+    !s.valid||
+    s.ob.invalid!==null||
+    s.ob.firstTap===null
+   )continue;
+
    const tapIndex=s.ob.firstTap;
-   // Do not replay old historical setups as new alerts when the page first loads.
+
+   // Do not replay old historical setups on initial load.
    if(tapIndex<a.bars.length-3)continue;
-   emit("qualified-"+tf+"-"+s.ob.id,"BTCUSD | "+tf.toUpperCase()+" | QUALIFIED "+s.ob.dir+" OB retest after "+tf.toUpperCase()+" "+(s.sweep?s.sweep.type:"")+" liquidity sweep. Target: "+(s.target?fmt(s.target.level):"not identified")+".");
-   if(s.target&&s.target.clearance&&s.target.clearance.i>tapIndex)
-    emit("target-hit-"+tf+"-"+s.ob.id,"BTCUSD | "+tf.toUpperCase()+" | opposing liquidity target reached at "+fmt(s.target.level)+".");
-   if(s.confirmEvent)emit("m5-confirm-"+tf+"-"+s.ob.id,"BTCUSD | M5 | CONFIRMATION for "+tf.toUpperCase()+" OB setup: "+s.confirm+".");
+
+   emit(
+    "qualified-"+tf+"-"+s.ob.id,
+    "BTCUSD | "+tf.toUpperCase()+
+    " | QUALIFIED "+s.ob.dir+
+    " | IDM swept at "+fmt(s.idm.level)+
+    " | First OB touch. Target: "+
+    (s.target?fmt(s.target.level):"not identified")+"."
+   );
+
+   if(s.target&&s.target.clearance&&
+      s.target.clearance.i>tapIndex){
+    emit(
+     "target-hit-"+tf+"-"+s.ob.id,
+     "BTCUSD | "+tf.toUpperCase()+
+     " | Opposing liquidity target reached at "+
+     fmt(s.target.level)+"."
+    );
+   }
   }
  }
 }
@@ -1092,7 +1130,7 @@ function renderSignal(a){
   return;
  }
 
- const states=setupStates(a,S.data["5m"]);
+ const states=setupStates(a);
  const active=latestActiveSetup(states,a);
 
  if(!active){
@@ -1109,7 +1147,7 @@ function renderSignal(a){
 
   detail.textContent=previous
    ? "No active setup. The latest qualified setup is invalidated or its target has been reached."
-   : "Waiting for M15 liquidity sweep and qualifying OB retest.";
+   : "Waiting for this timeframe's IDM sweep and first OB touch.";
 
   return;
  }
@@ -1302,7 +1340,7 @@ for(const e of a.liq.events.filter(e=>visible(e.i))){
 }
  // Current and historical BUY/SELL signals.
 
-const signalStates=setupStates(a,S.data["5m"]);
+const signalStates=setupStates(a);
 
 const activeSetup=latestActiveSetup(
  signalStates,
@@ -1394,7 +1432,7 @@ for(const s of signalStates){
 function renderObs(a){
  const box=$("observations");box.replaceChildren();
  if(!a){$("count").textContent="0 observations";return;}
- const states=setupStates(a,S.data["5m"]),items=[];
+ const states=setupStates(a),items=[];
  for(const s of states.slice(-12).reverse()){const ob=s.ob;items.push({title:s.state,detail:ob.dir+" OB "+fmt(ob.lo)+"–"+fmt(ob.hi)+" · formed "+timeLabel(ob.createdTime)+(ob.firstTap!==null?" · first tap "+timeLabel(a.bars[ob.firstTap].time):" · not yet tapped")+(s.sweep?" · "+a.tf+" "+s.sweep.type+" sweep "+timeLabel(s.sweep.time):"")+(s.target?" · next liquidity target "+fmt(s.target.level):" · no visible un-cleared opposing target")+(s.state.startsWith("QUALIFIED")?" · M5: "+s.confirm:"")});}
  for(const e of a.st.events.slice(-3).reverse())items.push({title:e.dir+" "+e.kind,detail:fmt(e.level)+" · "+timeLabel(a.bars[e.i].time)});
  for(const p of a.liq.levels.filter(p=>p.clearance===null).slice(0,5))
