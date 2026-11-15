@@ -677,8 +677,15 @@ function drawChartLabel(text,px,py,color,align="center"){
  ctx.lineWidth=pool.grade==="PRIMARY"?2:1;
  ctx.setLineDash([7,5]);
  ctx.beginPath();ctx.moveTo(sx,yy);ctx.lineTo(ex,yy);ctx.stroke();
- ctx.setLineDash([]);ctx.fillStyle=ctx.strokeStyle;ctx.textAlign="left";
- ctx.fillText(pool.source+" · "+(pool.clearance?"TAKEN":"ACTIVE"),Math.min(ex+3,right-95),yy-8);
+ ctx.setLineDash([]);
+
+drawChartLabel(
+ pool.source+" · "+(pool.clearance?"TAKEN":"ACTIVE"),
+ Math.min(ex+3,right-95),
+ yy-8,
+ ctx.strokeStyle,
+ "left"
+);
  ctx.lineWidth=1;
  }
  for(const e of a.st.events.filter(e=>visible(e.i)).slice(-5)){
@@ -695,12 +702,18 @@ function drawChartLabel(text,px,py,color,align="center"){
  ctx.lineTo(endX,yy);
  ctx.stroke();
 
- ctx.fillStyle=C.bos;
-ctx.font=Math.max(7,w/180)+"px system-ui";
-ctx.textAlign="left";
-ctx.textBaseline="middle";
-const labelX=Math.min(xx+bodyHalf+4,right-ctx.measureText(e.kind).width);
-ctx.fillText(e.kind,labelX,yy);
+ const labelX=Math.min(
+ xx+bodyHalf+4,
+ right-ctx.measureText(e.kind).width
+);
+
+drawChartLabel(
+ e.kind,
+ labelX,
+ yy,
+ C.bos,
+ "left"
+);
 ctx.lineWidth=1;
 }
 
@@ -714,67 +727,95 @@ for(const e of a.liq.events.filter(e=>visible(e.i))){
  ctx.arc(xx,yy,Math.max(3,step*.22),0,Math.PI*2);
  ctx.fill();
 }
+ // Current and historical BUY/SELL signals.
 
-// BUY / SELL arrows at qualifying OB first wick retests.
 const signalStates=setupStates(a,S.data["5m"]);
+
+const activeSetup=latestActiveSetup(
+ signalStates,
+ a
+);
 
 for(const s of signalStates){
 
- if(!s.sweep||
-    s.ob.firstTap===null||
-    !s.state.startsWith("QUALIFIED"))continue;
+ if(
+  !s.sweep||
+  s.ob.firstTap===null||
+  !s.state.startsWith("QUALIFIED")
+ )continue;
 
  const i=s.ob.firstTap;
 
  if(!visible(i))continue;
 
  const b=a.bars[i];
+
  const xx=x(i-offset);
+
  const buy=s.ob.dir==="BULLISH";
+
+ // Identify the currently active setup.
+ const isCurrent=s===activeSetup;
+
+ // Current signals are bright; historical signals are muted.
+ const color=isCurrent
+  ?(buy?C.bull:C.bear)
+  :"#788493";
 
  const tipY=buy
   ?Math.min(bottom-6,y(b.l)+12)
   :Math.max(top+6,y(b.h)-12);
 
- const tailY=buy?tipY+16:tipY-16;
+ const tailY=buy
+  ?tipY+16
+  :tipY-16;
 
- ctx.strokeStyle=buy?C.bull:C.bear;
- ctx.fillStyle=ctx.strokeStyle;
- ctx.lineWidth=2;
+ ctx.strokeStyle=color;
+ ctx.fillStyle=color;
+ ctx.lineWidth=isCurrent?2.5:1.5;
 
  // Arrow shaft.
  ctx.beginPath();
+
  ctx.moveTo(xx,tailY);
- ctx.lineTo(xx,buy?tipY+5:tipY-5);
+
+ ctx.lineTo(
+  xx,
+  buy?tipY+5:tipY-5
+ );
+
  ctx.stroke();
 
  // Arrow head.
  ctx.beginPath();
 
  if(buy){
+
   ctx.moveTo(xx,tipY);
   ctx.lineTo(xx-6,tipY+8);
   ctx.lineTo(xx+6,tipY+8);
+
  }else{
+
   ctx.moveTo(xx,tipY);
   ctx.lineTo(xx-6,tipY-8);
   ctx.lineTo(xx+6,tipY-8);
+
  }
 
  ctx.closePath();
  ctx.fill();
 
- // Signal label.
- ctx.font=Math.max(9,w/150)+"px system-ui";
- ctx.textAlign="center";
-
- ctx.fillText(
-  buy?"BUY":"SELL",
+ // Distinguish current from historical signals.
+ drawChartLabel(
+  (isCurrent?"":"PRIOR ")+
+  (buy?"BUY":"SELL"),
   xx,
-  buy?tailY+10:tailY-10
+  buy?tailY+10:tailY-10,
+  color
  );
-}
 
+                      }
 } // Close renderChart()
 
 function renderObs(a){
