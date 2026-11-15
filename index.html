@@ -530,9 +530,9 @@ ctx.textBaseline="middle";
 const labelX=Math.min(xx+bodyHalf+4,right-ctx.measureText(e.kind).width);
 ctx.fillText(e.kind,labelX,yy);
 ctx.lineWidth=1;
- for(const e of a.liq.events.filter(e=>visible(e.i))){const xx=x(e.i-offset),yy=y(e.extreme);ctx.fillStyle=e.type==="BSL"?C.bear:C.ssl;ctx.beginPath();ctx.arc(xx,yy,4,0,Math.PI*2);ctx.fill();}
- ctx.fillStyle=C.muted;ctx.textAlign="center";[0,Math.floor(bars.length/3),Math.floor(2*bars.length/3),bars.length-1].forEach(i=>ctx.fillText(new Date(bars[i].time).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),x(i),h*.94));
 }
+
+for(const e of a.liq.events.filter(e=>visible(e.i))){
 function renderObs(a){
  const box=$("observations");box.replaceChildren();
  if(!a){$("count").textContent="0 observations";return;}
