@@ -402,49 +402,176 @@ footer{
 </head>
 <body>
 <header><h1>BTC Hartley SMC</h1><p>Liquidity · Market structure · Order blocks · Fair value gaps · Educational alert monitor</p></header>
-<main>
-<section class="card" aria-label="Bitcoin market summary">
- <div class="row"><span class="muted">BTC spot market reference</span><span id="connection" class="status" role="status">Connecting…</span></div>
- <div id="price" class="price">—</div><div id="change" class="muted">Waiting for market data</div>
- <div class="stats">
-  <div class="stat"><small>24H HIGH</small><strong id="high">—</strong></div><div class="stat"><small>24H LOW</small><strong id="low">—</strong></div>
-  <div class="stat"><small>24H VOLUME</small><strong id="volume">—</strong></div><div class="stat"><small>UPDATED</small><strong id="updated">—</strong></div>
- </div><p id="source" class="note">Coinbase BTC-USD primary · Binance BTCUSDT fallback. Spot prices may differ from broker feeds.</p>
-</section>
-<section class="card" aria-label="Current trade signal">
- <div class="row">
-  <strong>SMC TRADE SIGNAL</strong>
-  <span id="signalBadge" class="status signal-wait">WAIT</span>
- </div>
- <div id="signalDirection" class="price signal-wait">WAIT</div>
- <p id="signalDetail" class="note">
-  Waiting for a qualifying M15 liquidity sweep and first OB retest.
- </p>
-</section>
- <section class="card" id="chartCard" aria-label="BTC SMC chart">
- <div class="row"><strong>BTCUSD · SMC chart</strong><div class="controls"><label class="muted" for="tf">Timeframe</label>
- <select id="tf"><option value="1m">1 minute</option><option value="5m" selected>5 minutes</option><option value="15m">15 minutes</option><option value="1h">1 hour</option><option value="4h">4 hours</option></select>
- <button id="fullscreen" type="button">⛶ Fullscreen</button></div></div>
- <canvas id="chart" width="1500" height="760" aria-label="Candlestick chart with market structure annotations">Chart rendering requires canvas support.</canvas>
- <div class="legend"><span><i class="sw" style="background:#13b99a"></i>Bullish OB</span><span><i class="sw" style="background:#ed5266"></i>Bearish OB</span>
- <span><i class="sw" style="background:#9b65ef"></i>FVG</span><span style="color:#f05a66"><i class="dash"></i>BSL</span>
- <span style="color:#24cf83"><i class="dash"></i>SSL</span><span style="color:#9ce6b5"><i class="dash"></i>BOS / CHOCH</span><span>↟ Sweep</span></div>
- <p id="chartInfo" class="note" aria-live="polite">Waiting for candles…</p>
-</section>
-<section class="card" aria-label="Multi timeframe context">
- <div class="row"><strong>Higher-timeframe context</strong><span id="status" class="status" role="status">Analysing…</span></div>
- <div class="metrics"><div class="metric"><small>H4 BIAS (SWEEP + DISPLACEMENT)</small><strong id="h4">—</strong></div>
- <div class="metric"><small>H1 STRUCTURE</small><strong id="h1">—</strong></div><div class="metric"><small>M15 LIQUIDITY</small><strong id="m15">—</strong></div></div>
- <p id="biasInfo" class="note">H4 bias requires a confirmed swing sweep, close back through the level, and subsequent directional displacement.</p>
-</section>
-<section class="card"><div class="row"><strong>Selected timeframe · Observations and setup states</strong><span id="count" class="status">—</span></div>
- <div id="observations" class="list"><div class="item">Scanning…</div></div></section>
-<section class="card"><div class="row"><strong>Chart event notifications</strong><span id="permission" class="status">Permission not requested</span></div>
- <div class="controls" style="margin-top:10px"><button id="notify" type="button">Enable notifications</button><button id="refresh" type="button">Refresh now</button></div>
- <div id="events" class="list"><div class="item">No new events this session.</div></div>
- <p class="note">Alerts are educational observations, not trade recommendations. Browser notifications require permission and the app to remain active.</p></section>
+
+<main style="padding-bottom:110px">
+
+  <!-- HOME SCREEN -->
+  <section id="homeScreen" class="screen active" aria-label="Home">
+    <h2 class="page-title">Market overview</h2>
+
+    <section class="card" aria-label="Bitcoin market summary">
+      <div class="row">
+        <span class="muted">BTC spot market reference</span>
+        <span id="connection" class="status" role="status">Connecting…</span>
+      </div>
+      <div id="price" class="price">—</div>
+      <div id="change" class="muted">Waiting for market data</div>
+      <div class="stats">
+        <div class="stat"><small>24H HIGH</small><strong id="high">—</strong></div>
+        <div class="stat"><small>24H LOW</small><strong id="low">—</strong></div>
+        <div class="stat"><small>24H VOLUME</small><strong id="volume">—</strong></div>
+        <div class="stat"><small>UPDATED</small><strong id="updated">—</strong></div>
+      </div>
+      <p id="source" class="note">Coinbase BTC-USD primary · Binance BTCUSDT fallback. Spot prices may differ from broker feeds.</p>
+    </section>
+
+    <section class="card" aria-label="Current trade signal">
+      <div class="row">
+        <strong>SMC TRADE SIGNAL</strong>
+        <span id="signalBadge" class="status signal-wait">WAIT</span>
+      </div>
+      <div id="signalDirection" class="price signal-wait">WAIT</div>
+      <p id="signalDetail" class="note">Waiting for a qualifying M15 liquidity sweep and first OB retest.</p>
+    </section>
+  </section>
+
+  <!-- CHART SCREEN -->
+  <section id="chartScreen" class="screen" aria-label="Chart">
+    <h2 class="page-title">BTCUSD chart</h2>
+
+    <section class="card" id="chartCard" aria-label="BTC SMC chart">
+      <div class="row">
+        <strong>BTCUSD · SMC chart</strong>
+        <div class="controls">
+          <label class="muted" for="tf">Timeframe</label>
+          <select id="tf">
+            <option value="1m">1 minute</option>
+            <option value="5m" selected>5 minutes</option>
+            <option value="15m">15 minutes</option>
+            <option value="1h">1 hour</option>
+            <option value="4h">4 hours</option>
+          </select>
+          <button id="fullscreen" type="button">⛶ Fullscreen</button>
+        </div>
+      </div>
+
+      <canvas id="chart" width="1500" height="760" aria-label="Candlestick chart with market structure annotations">Chart rendering requires canvas support.</canvas>
+
+      <div class="legend">
+        <span><i class="sw" style="background:#13b99a"></i>Bullish OB</span>
+        <span><i class="sw" style="background:#ed5266"></i>Bearish OB</span>
+        <span><i class="sw" style="background:#9b65ef"></i>FVG</span>
+        <span style="color:#f05a66"><i class="dash"></i>BSL</span>
+        <span style="color:#24cf83"><i class="dash"></i>SSL</span>
+        <span style="color:#9ce6b5"><i class="dash"></i>BOS / CHOCH</span>
+        <span>↟ Sweep</span>
+      </div>
+      <p id="chartInfo" class="note" aria-live="polite">Waiting for candles…</p>
+    </section>
+  </section>
+
+  <!-- ANALYSIS SCREEN -->
+  <section id="analysisScreen" class="screen" aria-label="Analysis">
+    <h2 class="page-title">Market analysis</h2>
+
+    <section class="card" aria-label="Multi timeframe context">
+      <div class="row">
+        <strong>Higher-timeframe context</strong>
+        <span id="status" class="status" role="status">Analysing…</span>
+      </div>
+      <div class="metrics">
+        <div class="metric"><small>H4 BIAS (SWEEP + DISPLACEMENT)</small><strong id="h4">—</strong></div>
+        <div class="metric"><small>H1 STRUCTURE</small><strong id="h1">—</strong></div>
+        <div class="metric"><small>M15 LIQUIDITY</small><strong id="m15">—</strong></div>
+      </div>
+      <p id="biasInfo" class="note">H4 bias requires a confirmed swing sweep, close back through the level, and subsequent directional displacement.</p>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <strong>Timeframe observations</strong>
+        <span id="count" class="status">—</span>
+      </div>
+      <div class="controls" style="margin-top:10px">
+        <label class="muted" for="analysisTf">Analyze timeframe</label>
+        <select id="analysisTf">
+          <option value="1m">1 minute</option>
+          <option value="5m" selected>5 minutes</option>
+          <option value="15m">15 minutes</option>
+          <option value="1h">1 hour</option>
+          <option value="4h">4 hours</option>
+        </select>
+      </div>
+      <div id="observations" class="list">
+        <div class="item">Scanning…</div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ALERTS SCREEN -->
+  <section id="alertsScreen" class="screen" aria-label="Alerts">
+    <h2 class="page-title">Alerts and events</h2>
+
+    <section class="card">
+      <div class="row">
+        <strong>Chart event notifications</strong>
+        <span id="permission" class="status">Permission not requested</span>
+      </div>
+      <div class="controls" style="margin-top:10px">
+        <button id="notify" type="button">Enable notifications</button>
+        <button id="refresh" type="button">Refresh now</button>
+      </div>
+      <div id="events" class="list">
+        <div class="item">No new events this session.</div>
+      </div>
+      <p class="note">Alerts are educational observations, not trade recommendations. Browser notifications require permission and the app to remain active.</p>
+    </section>
+  </section>
+
+  <!-- SETTINGS SCREEN -->
+  <section id="settingsScreen" class="screen" aria-label="Settings">
+    <h2 class="page-title">App information</h2>
+
+    <section class="card">
+      <strong>BTC Hartley SMC</strong>
+      <p class="note">A BTCUSD market-structure and Smart Money Concepts analysis and alert monitor.</p>
+      <div class="item">
+        <strong>Market data</strong>
+        <div class="detail">Coinbase BTC-USD primary source, with Binance BTCUSDT fallback.</div>
+      </div>
+      <div class="item">
+        <strong>Analysis timeframes</strong>
+        <div class="detail">1m · 5m · 15m · 1h · 4h</div>
+      </div>
+      <div class="item">
+        <strong>Trading safety</strong>
+        <div class="detail">Signals are educational observations. The app does not execute trades or guarantee market outcomes.</div>
+      </div>
+    </section>
+  </section>
+
 </main>
+
+<nav class="bottom-nav" aria-label="Main navigation">
+  <button class="nav-item active" type="button" data-screen="home" aria-controls="homeScreen" aria-current="page">
+    <span class="nav-icon">⌂</span><span>Home</span>
+  </button>
+  <button class="nav-item" type="button" data-screen="chart" aria-controls="chartScreen">
+    <span class="nav-icon">▥</span><span>Chart</span>
+  </button>
+  <button class="nav-item" type="button" data-screen="analysis" aria-controls="analysisScreen">
+    <span class="nav-icon">⌁</span><span>Analysis</span>
+  </button>
+  <button class="nav-item" type="button" data-screen="alerts" aria-controls="alertsScreen">
+    <span class="nav-icon">♧</span><span>Alerts</span>
+  </button>
+  <button class="nav-item" type="button" data-screen="settings" aria-controls="settingsScreen">
+    <span class="nav-icon">⚙</span><span>Settings</span>
+  </button>
+</nav>
+
 <footer>Educational market-structure visualizer · No trade execution · No financial recommendations</footer>
+ 
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
@@ -1274,7 +1401,56 @@ function syntheticTests(){
  const wrong=h4Bias({bars:biasBars,liq:{events:[{...sweep,i:35}]},st:{events:[brk]},gaps:[{i:32,dir:"BULLISH"}]});
  if(wrong.bias==="BULLISH")throw Error("H4 event-order rejection failed");
 }
-$("tf").addEventListener("change",renderSelected);
+
+// Bottom navigation: display one screen at a time.
+const navButtons=[...document.querySelectorAll(".nav-item")];
+const appScreens=[...document.querySelectorAll(".screen")];
+
+function showScreen(name){
+ const target=document.getElementById(name+"Screen");
+ if(!target)return;
+
+ appScreens.forEach(screen=>{
+  screen.classList.toggle("active",screen===target);
+ });
+
+ navButtons.forEach(button=>{
+  const active=button.dataset.screen===name;
+  button.classList.toggle("active",active);
+
+  if(active){
+   button.setAttribute("aria-current","page");
+  }else{
+   button.removeAttribute("aria-current");
+  }
+ });
+
+ if(name==="chart"){
+  requestAnimationFrame(renderSelected);
+ }
+
+ if(name==="analysis"){
+  renderObs(S.data[$("tf").value]||null);
+ }
+}
+
+navButtons.forEach(button=>{
+ button.addEventListener("click",()=>{
+  showScreen(button.dataset.screen);
+ });
+});
+
+// Keep the Chart and Analysis timeframe selectors synchronized.
+$("tf").addEventListener("change",()=>{
+ $("analysisTf").value=$("tf").value;
+ renderSelected();
+});
+
+$("analysisTf").addEventListener("change",()=>{
+ $("tf").value=$("analysisTf").value;
+ renderSelected();
+});
+ 
 $("refresh").addEventListener("click",async()=>{await ticker();await refresh();});
 $("fullscreen").addEventListener("click",async()=>{const c=$("chartCard");try{if(document.fullscreenElement)await document.exitFullscreen();else if(c.requestFullscreen)await c.requestFullscreen();else $("chartInfo").textContent="Fullscreen unavailable.";}catch(e){$("chartInfo").textContent="Fullscreen could not be opened.";console.warn(e);}});
 document.addEventListener("fullscreenchange",()=>{$("fullscreen").textContent=document.fullscreenElement?"⤢ Exit fullscreen":"⛶ Fullscreen";requestAnimationFrame(renderSelected);});
