@@ -577,6 +577,73 @@ function renderChart(canvas,a){
  const bars=a.bars.slice(-115),offset=a.bars.length-bars.length;if(!bars.length)return;
  const hi=Math.max(...bars.map(b=>b.h)),lo=Math.min(...bars.map(b=>b.l)),pad=Math.max((hi-lo)*.12,hi*.00005,.01),min=lo-pad,max=hi+pad;
  const left=w*.045,right=w*.87,top=h*.07,bottom=h*.86,step=(right-left)/bars.length,x=i=>left+(i+.5)*step,y=p=>bottom-(p-min)/(max-min)*(bottom-top),visible=i=>i>=offset&&i<offset+bars.length;
+ const labelBoxes=[];
+
+function drawChartLabel(text,px,py,color,align="center"){
+
+ const fontSize=Math.max(8,w/175);
+ const height=fontSize+5;
+ const pad=3;
+
+ ctx.save();
+ ctx.font=fontSize+"px system-ui";
+ ctx.textBaseline="middle";
+
+ const width=ctx.measureText(text).width+pad*2;
+
+ let baseLeft=align==="left"?px:px-width/2;
+ baseLeft=clamp(baseLeft,left,right-width);
+
+ const offsets=[0,-12,12,-24,24,-36,36,-48,48];
+
+ let chosenY=clamp(
+  py,
+  top+height/2,
+  bottom-height/2
+ );
+
+ let chosenTop=chosenY-height/2;
+
+ for(const offsetY of offsets){
+
+  const candidateY=clamp(
+   py+offsetY,
+   top+height/2,
+   bottom-height/2
+  );
+
+  const candidateTop=candidateY-height/2;
+
+  const collision=labelBoxes.some(box=>
+   baseLeft<box.right+2&&
+   baseLeft+width>box.left-2&&
+   candidateTop<box.bottom+2&&
+   candidateTop+height>box.top-2
+  );
+
+  if(!collision){
+   chosenY=candidateY;
+   chosenTop=candidateTop;
+   break;
+  }
+ }
+
+ labelBoxes.push({
+  left:baseLeft,
+  right:baseLeft+width,
+  top:chosenTop,
+  bottom:chosenTop+height
+ });
+
+ ctx.fillStyle="rgba(8,14,23,.86)";
+ ctx.fillRect(baseLeft,chosenTop,width,height);
+
+ ctx.fillStyle=color;
+ ctx.textAlign=align;
+ ctx.fillText(text,align==="left"?baseLeft+pad:baseLeft+width/2,chosenY);
+
+ ctx.restore();
+}
  ctx.font=Math.max(10,w/130)+"px system-ui";ctx.textBaseline="middle";
  for(let n=0;n<=5;n++){const p=max-(max-min)*n/5,yy=y(p);ctx.strokeStyle=C.grid;ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(right,yy);ctx.stroke();ctx.fillStyle=C.muted;ctx.textAlign="left";ctx.fillText(fmt(p),right+5,yy);}
  for(let i=0;i<bars.length;i++){
@@ -591,7 +658,14 @@ function renderChart(canvas,a){
   const sx=ob.origin<offset?left:x(ob.origin-offset),ex=Math.max(sx+2,x(clamp(end-offset,0,bars.length-1))),yt=y(ob.hi),yb=y(ob.lo),color=ob.dir==="BULLISH"?C.bull:C.bear;
   ctx.fillStyle=ob.firstTap!==null?"rgba(240,188,99,.12)":ob.dir==="BULLISH"?"rgba(19,185,154,.15)":"rgba(237,82,102,.15)";
   ctx.fillRect(sx,yt,ex-sx,Math.max(2,yb-yt));ctx.strokeStyle=color;ctx.strokeRect(sx,yt,ex-sx,Math.max(2,yb-yt));
-  if(ob.firstTap!==null&&visible(ob.firstTap)){ctx.fillStyle=C.warn;ctx.fillText("FIRST TAP",x(ob.firstTap-offset),yt-8);}
+  if(ob.firstTap!==null&&visible(ob.firstTap)){
+ drawChartLabel(
+  "FIRST TAP",
+  x(ob.firstTap-offset),
+  yt-8,
+  C.warn
+ );
+  }                                                                                          
  }
  for(const pool of a.liq.levels){
  if(pool.level<min||pool.level>max)continue;
