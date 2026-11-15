@@ -19,6 +19,9 @@ select,button{min-height:42px;padding:9px 12px;border:1px solid #52677d;border-r
 #chartCard:fullscreen{overflow:auto;padding:14px;border:0;background:var(--bg)}#chartCard:fullscreen canvas{height:calc(100vh - 170px);min-height:320px}
 .legend{display:flex;gap:9px 16px;flex-wrap:wrap;margin-top:12px;color:#b5c1ce;font-size:11px}.legend span{display:inline-flex;align-items:center;gap:5px}.sw{display:inline-block;width:10px;height:10px;border-radius:2px}.dash{display:inline-block;width:18px;border-top:2px dashed currentColor}
 .note{margin:9px 0 0;font-size:11px;line-height:1.6}.status{font-size:11px}.status[data-state=stale],.warn{color:var(--warn)}.status[data-state=error],.bad{color:var(--bear)}.good{color:var(--bull)}
+.signal-buy{color:var(--bull)!important}
+.signal-sell{color:var(--bear)!important}
+.signal-wait{color:var(--muted)!important}
 .list{display:grid;gap:8px;margin-top:10px}.item{font-size:12px;line-height:1.6}.item strong{display:block}.item .detail{color:var(--muted)}
 footer{padding:18px;color:var(--muted);text-align:center;font-size:10px}
 @media(min-width:700px){.stats{grid-template-columns:repeat(4,minmax(0,1fr))}.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.card{padding:18px}}
@@ -36,7 +39,17 @@ footer{padding:18px;color:var(--muted);text-align:center;font-size:10px}
   <div class="stat"><small>24H VOLUME</small><strong id="volume">—</strong></div><div class="stat"><small>UPDATED</small><strong id="updated">—</strong></div>
  </div><p id="source" class="note">Coinbase BTC-USD primary · Binance BTCUSDT fallback. Spot prices may differ from broker feeds.</p>
 </section>
-<section class="card" id="chartCard" aria-label="BTC SMC chart">
+<section class="card" aria-label="Current trade signal">
+ <div class="row">
+  <strong>SMC TRADE SIGNAL</strong>
+  <span id="signalBadge" class="status signal-wait">WAIT</span>
+ </div>
+ <div id="signalDirection" class="price signal-wait">WAIT</div>
+ <p id="signalDetail" class="note">
+  Waiting for a qualifying M15 liquidity sweep and first OB retest.
+ </p>
+</section>
+ <section class="card" id="chartCard" aria-label="BTC SMC chart">
  <div class="row"><strong>BTCUSD · SMC chart</strong><div class="controls"><label class="muted" for="tf">Timeframe</label>
  <select id="tf"><option value="1m">1 minute</option><option value="5m" selected>5 minutes</option><option value="15m">15 minutes</option><option value="1h">1 hour</option><option value="4h">4 hours</option></select>
  <button id="fullscreen" type="button">⛶ Fullscreen</button></div></div>
@@ -419,7 +432,8 @@ function emit(key,msg){
  if("Notification"in window&&Notification.permission==="granted"){try{new Notification("BTC Hartley SMC",{body:msg,tag:key});}catch(e){console.warn(e);}}
 }
 function setupStates(selected,m5){
- if(!selected)return[];const sweeps=selected.liq.events.filter(e=>e.kind==="sweep"),out=[];
+ if(!selected)return[];const sweepSource=S.data["15m"]||selected;
+const sweeps=sweepSource.liq.events.filter(e=>e.kind==="sweep"),out=[];
  for(const ob of selected.zones){const tap=ob.firstTap,dir=ob.dir,needed=dir==="BULLISH"?"SSL":"BSL",tapTime=tap===null?Infinity:selected.bars[tap].time;
   const valid=ob.invalid===null||(tap!==null&&ob.invalid>tap);
   const eligible=sweeps.filter(e=>e.type===needed&&e.time<tapTime),sweep=eligible.length?eligible[eligible.length-1]:null,isTapped=tap!==null;
@@ -467,7 +481,73 @@ function renderEvents(){
  const box=$("events");box.replaceChildren();if(!S.events.length){const d=document.createElement("div");d.className="item";d.textContent="No new events this session.";box.append(d);return;}
  for(const e of S.events){const d=document.createElement("div");d.className="item";d.textContent=timeLabel(e.t)+" · "+e.msg;box.append(d);}
 }
-function renderContext(){
+function renderSignal(a){
+ const badge=$("signalBadge");
+ const direction=$("signalDirection");
+ const detail=$("signalDetail");
+
+ badge.className="status signal-wait";
+ direction.className="price signal-wait";
+
+ if(!a){
+  badge.textContent="WAIT";
+  direction.textContent="WAIT";
+  detail.textContent="Waiting for "+$("tf").value+" analysis.";
+  return;
+ }
+
+ const states=setupStates(a,S.data["5m"]);
+
+ const candidates=states
+  .filter(s=>s.sweep&&s.ob.firstTap!==null)
+  .sort((x,y)=>
+   a.bars[y.ob.firstTap].time-a.bars[x.ob.firstTap].time
+  );
+
+ const active=candidates.find(s=>
+  s.state.startsWith("QUALIFIED")&&
+  s.ob.invalid===null&&
+  s.valid&&
+  !(s.target&&s.target.clearance)
+ );
+
+ if(!active){
+  badge.textContent="WAIT";
+  direction.textContent="WAIT";
+
+  const latest=candidates[0];
+
+  detail.textContent=latest
+   ? "No active qualified setup. Check invalidation or target status."
+   : "Waiting for M15 liquidity sweep and qualifying OB retest.";
+
+  return;
+ }
+
+ const dir=active.ob.dir;
+ const word=dir==="BULLISH"?"BUY":"SELL";
+ const tap=a.bars[active.ob.firstTap];
+
+ badge.textContent=word;
+ direction.textContent=word;
+
+ badge.className="status "+
+  (dir==="BULLISH"?"signal-buy":"signal-sell");
+
+ direction.className="price "+
+  (dir==="BULLISH"?"signal-buy":"signal-sell");
+
+ detail.textContent=
+  a.tf+
+  " · M15 "+active.sweep.type+
+  " sweep · First OB wick retest at "+
+  fmt(tap.c)+
+  " · M5: "+active.confirm+
+  (active.target
+   ?" · Target liquidity: "+fmt(active.target.level)
+   :" · No opposing target identified")+".";
+}
+ function renderContext(){
  const h=h4Bias(S.data["4h"]);$("h4").textContent=h.bias;$("h4").style.color=h.bias==="BULLISH"?C.bull:h.bias==="BEARISH"?C.bear:C.muted;$("biasInfo").textContent=h.reason;
  const one=S.data["1h"];if(one){$("h1").textContent=one.st.bias+" structure";$("h1").style.color=one.st.bias==="BULLISH"?C.bull:one.st.bias==="BEARISH"?C.bear:C.muted;}
  const fifteen=S.data["15m"];if(fifteen){const recent=fifteen.liq.events.slice(-3).reverse();$("m15").textContent=recent.length?recent.map(e=>e.type+" "+e.kind).join(" · "):"No recent sweep";}
@@ -533,8 +613,76 @@ ctx.lineWidth=1;
 }
 
 for(const e of a.liq.events.filter(e=>visible(e.i))){
-    // Draw the liquidity event here.
+ const xx=x(e.i-offset);
+ const yy=y(e.level);
+
+ ctx.fillStyle=e.type==="BSL"?C.bear:C.bull;
+
+ ctx.beginPath();
+ ctx.arc(xx,yy,Math.max(3,step*.22),0,Math.PI*2);
+ ctx.fill();
 }
+
+// BUY / SELL arrows at qualifying OB first wick retests.
+const signalStates=setupStates(a,S.data["5m"]);
+
+for(const s of signalStates){
+
+ if(!s.sweep||
+    s.ob.firstTap===null||
+    !s.state.startsWith("QUALIFIED"))continue;
+
+ const i=s.ob.firstTap;
+
+ if(!visible(i))continue;
+
+ const b=a.bars[i];
+ const xx=x(i-offset);
+ const buy=s.ob.dir==="BULLISH";
+
+ const tipY=buy
+  ?Math.min(bottom-6,y(b.l)+12)
+  :Math.max(top+6,y(b.h)-12);
+
+ const tailY=buy?tipY+16:tipY-16;
+
+ ctx.strokeStyle=buy?C.bull:C.bear;
+ ctx.fillStyle=ctx.strokeStyle;
+ ctx.lineWidth=2;
+
+ // Arrow shaft.
+ ctx.beginPath();
+ ctx.moveTo(xx,tailY);
+ ctx.lineTo(xx,buy?tipY+5:tipY-5);
+ ctx.stroke();
+
+ // Arrow head.
+ ctx.beginPath();
+
+ if(buy){
+  ctx.moveTo(xx,tipY);
+  ctx.lineTo(xx-6,tipY+8);
+  ctx.lineTo(xx+6,tipY+8);
+ }else{
+  ctx.moveTo(xx,tipY);
+  ctx.lineTo(xx-6,tipY-8);
+  ctx.lineTo(xx+6,tipY-8);
+ }
+
+ ctx.closePath();
+ ctx.fill();
+
+ // Signal label.
+ ctx.font=Math.max(9,w/150)+"px system-ui";
+ ctx.textAlign="center";
+
+ ctx.fillText(
+  buy?"BUY":"SELL",
+  xx,
+  buy?tailY+10:tailY-10
+ );
+}
+
 } // Close renderChart()
 
 function renderObs(a){
@@ -557,8 +705,39 @@ function renderObs(a){
  for(const v of items.slice(0,12)){const d=document.createElement("div"),s=document.createElement("strong"),t=document.createElement("div");d.className="item";s.textContent=v.title;t.className="detail";t.textContent=v.detail;d.append(s,t);box.append(d);}
 }
 function renderSelected(){
- const tf=$("tf").value,a=S.data[tf];if(!a){$("chartInfo").textContent=S.errors[tf]?"Unavailable: "+S.errors[tf]:"Waiting for "+tf+" candles…";return;}
- try{renderChart($("chart"),a);renderObs(a);$("chartInfo").textContent=tf+" · "+Math.min(115,a.bars.length)+" completed candles · first wick touch ends OB box · source: "+a.source+(S.errors[tf]?" · STALE DATA":"");}catch(e){$("chartInfo").textContent="Chart error: "+e.message;console.error(e);}
+
+ const tf=$("tf").value;
+ const a=S.data[tf];
+
+ renderSignal(a);
+
+ if(!a){
+  $("chartInfo").textContent=
+   S.errors[tf]
+    ?"Unavailable: "+S.errors[tf]
+    :"Waiting for "+tf+" candles…";
+  return;
+ }
+
+ try{
+
+  renderChart($("chart"),a);
+  renderObs(a);
+
+  $("chartInfo").textContent=
+   tf+
+   " · "+
+   Math.min(115,a.bars.length)+
+   " completed candles · arrows mark qualifying first OB wick retests · source: "+
+   a.source+
+   (S.errors[tf]?" · STALE DATA":"");
+
+ }catch(e){
+
+  $("chartInfo").textContent="Chart error: "+e.message;
+  console.error(e);
+
+ }
 }
 async function refresh(){
  if(S.busy)return;S.busy=true;status("Updating…");const failures=[];
