@@ -904,6 +904,46 @@ function detectOrderBlocks(bars,gaps,st){
  }
  return blocks.slice(-35);
 }
+ 
+function findIDMForOB(a,ob){
+ if(ob.firstTap===null)return null;
+
+ const dir=ob.dir;
+ const type=dir==="BEARISH"?"high":"low";
+ const tap=ob.firstTap;
+
+ const candidates=a.pts.filter(p=>
+  p.type===type&&
+  p.i>ob.created&&
+  p.confirmed<tap&&
+  (dir==="BEARISH"?p.level<ob.lo:p.level>ob.hi)
+ );
+
+ const swept=[];
+
+ for(const p of candidates){
+  for(let i=p.confirmed+1;i<=tap;i++){
+   const taken=dir==="BEARISH"
+    ?a.bars[i].h>p.level
+    :a.bars[i].l<p.level;
+
+   if(taken){
+    swept.push({
+     type:"IDM",
+     level:p.level,
+     i,
+     time:a.bars[i].time,
+     pivot:p
+    });
+    break;
+   }
+  }
+ }
+
+ swept.sort((x,y)=>y.i-x.i);
+ return swept[0]||null;
+}
+ 
 function analyse(tf,bars){
  if(!Array.isArray(bars)||bars.length<35)throw Error("At least 35 completed candles required for "+tf);
  for(const b of bars)if(![b.time,b.o,b.h,b.l,b.c,b.v].every(Number.isFinite)||!validOHLC(b.o,b.h,b.l,b.c,b.v))throw Error("Invalid OHLC candle in "+tf);
@@ -930,29 +970,65 @@ function emit(key,msg){
  if(S.seen.has(key))return;S.seen.add(key);S.events.unshift({t:Date.now(),msg});S.events=S.events.slice(0,12);renderEvents();
  if("Notification"in window&&Notification.permission==="granted"){try{new Notification("BTC Hartley SMC",{body:msg,tag:key});}catch(e){console.warn(e);}}
 }
-function setupStates(selected,m5){
- if(!selected)return[];const sweepSource=S.data["15m"]||selected;
-const sweeps=sweepSource.liq.events.filter(e=>e.kind==="sweep"),out=[];
- for(const ob of selected.zones){const tap=ob.firstTap,dir=ob.dir,needed=dir==="BULLISH"?"SSL":"BSL",tapTime=tap===null?Infinity:selected.bars[tap].time;
-  const valid=ob.invalid===null||(tap!==null&&ob.invalid>tap);
-  const eligible=sweeps.filter(e=>e.type===needed&&e.time<tapTime),sweep=eligible.length?eligible[eligible.length-1]:null,isTapped=tap!==null;
+
+function setupStates(selected){
+ if(!selected)return[];
+
+ const out=[];
+
+ for(const ob of selected.zones){
+  const tap=ob.firstTap;
+  const dir=ob.dir;
+  const valid=ob.invalid===null||
+   (tap!==null&&ob.invalid>tap);
+
+  const idm=findIDMForOB(selected,ob);
+  const isTapped=tap!==null;
+
   let state="OB detected";
-  if(sweep)state="Required "+needed+" liquidity swept";
-  if(isTapped&&sweep)state=ob.invalid!==null&&ob.invalid>tap?"QUALIFIED · retest then invalidated":"QUALIFIED · first OB wick retest";
-  else if(isTapped&&!sweep)state="Tapped · no qualifying "+selected.tf+" sweep";
-  else if(ob.invalid!==null&&tap===null)state="Invalidated before retest";
-  let confirm="Not yet confirmed",confirmEvent=null;
-  // M5 is a separate confirmation layer. A 5m setup cannot confirm itself.
-  if(isTapped&&m5&&selected.tf!=="5m"){const firstTapTime=selected.bars[tap].time;
-   confirmEvent=m5.st.events.find(e=>m5.bars[e.i].time>=firstTapTime&&e.dir===dir);
-   if(confirmEvent)confirm=dir+" "+confirmEvent.kind+" after retest";
+
+  if(idm)state="IDM swept";
+
+  if(isTapped&&idm){
+   state=valid
+    ?"QUALIFIED · IDM swept and first OB tap"
+    :"QUALIFIED · retest then invalidated";
+  }else if(isTapped){
+   state="Tapped · no qualifying IDM sweep";
+  }else if(ob.invalid!==null){
+   state="Invalidated before retest";
   }
-  // Keep a target eligible when it was cleared after the first OB retest; that is a target hit.
-  const targets=selected.liq.levels.filter(p=>(p.clearance===null||(tap!==null&&p.clearance.i>tap&&(ob.invalid===null||p.clearance.i<ob.invalid)))&&(dir==="BULLISH"?p.type==="high"&&p.level>ob.hi:p.type==="low"&&p.level<ob.lo));
-  targets.sort((x,y)=>dir==="BULLISH"?x.level-y.level:y.level-x.level);
-  out.push({ob,sweep,state,confirm,confirmEvent,target:targets[0]||null,valid});
+
+  const targets=selected.liq.levels.filter(p=>
+   (p.clearance===null||
+    (tap!==null&&p.clearance.i>tap&&
+     (ob.invalid===null||p.clearance.i<ob.invalid)))&&
+   (dir==="BULLISH"
+    ?p.type==="high"&&p.level>ob.hi
+    :p.type==="low"&&p.level<ob.lo)
+  );
+
+  targets.sort((x,y)=>
+   dir==="BULLISH"
+    ?x.level-y.level
+    :y.level-x.level
+  );
+
+  out.push({
+   ob,
+   idm,
+   sweep:idm,
+   state,
+   confirm:"Not required",
+   confirmEvent:null,
+   target:targets[0]||null,
+   valid
+  });
  }
+
  return out;
+ }
+  
 }
 function isActiveSetup(s){
  return !!(
