@@ -509,7 +509,25 @@ function renderChart(canvas,a){
  ctx.fillText(pool.source+" · "+(pool.clearance?"TAKEN":"ACTIVE"),Math.min(ex+3,right-95),yy-8);
  ctx.lineWidth=1;
  }
- for(const e of a.st.events.filter(e=>visible(e.i)).slice(-5)){const xx=x(e.i-offset),yy=y(e.level);ctx.strokeStyle=C.bos;ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(Math.max(left,xx-w*.12),yy);ctx.lineTo(xx,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=C.bos;ctx.textAlign="left";ctx.fillText(e.kind,Math.max(left,xx-w*.12),yy-9);}
+ for(const e of a.st.events.filter(e=>visible(e.i)).slice(-5)){
+ const xx=x(e.i-offset),yy=y(e.level),pivotX=x(e.pivot.i-offset);
+ const bodyHalf=Math.max(1,step*.32);
+ const startX=Math.max(left,pivotX);
+ const endX=Math.max(startX,xx-bodyHalf);
+
+ ctx.strokeStyle=C.bos;
+ ctx.lineWidth=2;
+ ctx.setLineDash([]);
+ ctx.beginPath();
+ ctx.moveTo(startX,yy);
+ ctx.lineTo(endX,yy);
+ ctx.stroke();
+
+ ctx.fillStyle=C.bos;
+ ctx.textAlign="left";
+ ctx.fillText(e.kind,Math.min(xx+bodyHalf+4,right-48),yy-9);
+ ctx.lineWidth=1;
+ }
  for(const e of a.liq.events.filter(e=>visible(e.i))){const xx=x(e.i-offset),yy=y(e.extreme);ctx.fillStyle=e.type==="BSL"?C.bear:C.ssl;ctx.beginPath();ctx.arc(xx,yy,4,0,Math.PI*2);ctx.fill();}
  ctx.fillStyle=C.muted;ctx.textAlign="center";[0,Math.floor(bars.length/3),Math.floor(2*bars.length/3),bars.length-1].forEach(i=>ctx.fillText(new Date(bars[i].time).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),x(i),h*.94));
 }
