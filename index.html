@@ -1997,7 +1997,25 @@ $("fullscreen").addEventListener("click",async()=>{const c=$("chartCard");try{if
 document.addEventListener("fullscreenchange",()=>{$("fullscreen").textContent=document.fullscreenElement?"⤢ Exit fullscreen":"⛶ Fullscreen";requestAnimationFrame(renderSelected);});
 window.addEventListener("resize",()=>requestAnimationFrame(renderSelected));
 $("notify").addEventListener("click",async()=>{if(!("Notification"in window)){$("permission").textContent="Not supported";return;}try{$("permission").textContent="Permission: "+await Notification.requestPermission();}catch(e){$("permission").textContent="Permission request failed";}});
-async function start(){try{syntheticTests();}catch(e){status("Synthetic check failed","error");console.error(e);}await ticker();await refresh();if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(e=>console.warn("Service worker registration:",e));}
+async function start(){
+ try{
+  syntheticTests();
+ }catch(e){
+  status("Synthetic check failed","error");
+  console.error(e);
+ }
+
+ await ticker();
+ await refresh();
+
+ // Start live trade-price monitoring after market analysis loads.
+ connectLiveTrades();
+
+ if("serviceWorker"in navigator){
+  navigator.serviceWorker.register("./sw.js")
+   .catch(e=>console.warn("Service worker registration:",e));
+ }
+}
 start();setInterval(ticker,30000);setInterval(refresh,60000);
 </script>
 </body>
