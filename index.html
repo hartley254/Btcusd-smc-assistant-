@@ -1582,6 +1582,60 @@ function syntheticTests(){
   if(testEntry("BULLISH",sameCandleBars,makeTestOB("BULLISH")).length!==0)
    throw Error("Same-candle clearance/touch rejection failed");
 
+  // 7. Verify actual OB detector fill tracking for bullish and bearish OBs.
+  const makeDetectorBars=(dir)=>{
+   const out=Array.from({length:22},(_,i)=>({
+    time:t+i*300000,o:100,h:101,l:99,c:100,v:10
+   }));
+
+   if(dir==="BULLISH"){
+    // Last opposing candle becomes the bullish OB.
+    out[16]={...out[16],o:101,c:99,h:102,l:98};
+    // Strong bullish displacement.
+    out[17]={...out[17],o:99,c:108,h:109,l:98};
+   }else{
+    // Last opposing candle becomes the bearish OB.
+    out[16]={...out[16],o:99,c:101,h:102,l:98};
+    // Strong bearish displacement.
+    out[17]={...out[17],o:101,c:92,h:102,l:91};
+   }
+   return out;
+  };
+
+  const detectTestOB=(dir,bars)=>{
+   const gaps=[{i:17,dir}];
+   const found=detectOrderBlocks(bars,gaps,{events:[]});
+   return found.find(ob=>ob.created===17&&ob.dir===dir);
+  };
+
+  // Partial mitigation must not count as a complete fill.
+  const bullDetectorBars=makeDetectorBars("BULLISH");
+  bullDetectorBars[18]={...bullDetectorBars[18],o:100,c:100,h:101.5,l:99};
+  const bullDetected=detectTestOB("BULLISH",bullDetectorBars);
+  if(!bullDetected||bullDetected.filled!==null)
+   throw Error("Bullish detector partial-mitigation test failed");
+
+  const bearDetectorBars=makeDetectorBars("BEARISH");
+  bearDetectorBars[18]={...bearDetectorBars[18],o:100,c:100,h:101,l:98.5};
+  const bearDetected=detectTestOB("BEARISH",bearDetectorBars);
+  if(!bearDetected||bearDetected.filled!==null)
+   throw Error("Bearish detector partial-mitigation test failed");
+
+  // Reaching the far boundary must record the complete-fill candle.
+  const bullFullBars=makeDetectorBars("BULLISH");
+  bullFullBars[18]={...bullFullBars[18],o:100,c:100,h:101.5,l:99};
+  bullFullBars[19]={...bullFullBars[19],o:100,c:99,h:101,l:97};
+  const bullFull=detectTestOB("BULLISH",bullFullBars);
+  if(!bullFull||bullFull.filled!==19)
+   throw Error("Bullish detector complete-fill tracking failed");
+
+  const bearFullBars=makeDetectorBars("BEARISH");
+  bearFullBars[18]={...bearFullBars[18],o:100,c:100,h:101,l:98.5};
+  bearFullBars[19]={...bearFullBars[19],o:100,c:101,h:103,l:99};
+  const bearFull=detectTestOB("BEARISH",bearFullBars);
+  if(!bearFull||bearFull.filled!==19)
+   throw Error("Bearish detector complete-fill tracking failed");
+
  const eqBars=bars.map(x=>({...x}));eqBars[20]={...eqBars[20],h:110};eqBars[30]={...eqBars[30],h:110};
  const eqPts=[{type:"high",i:20,level:110,confirmed:22},{type:"high",i:30,level:110,confirmed:32}],fake={labels:[],events:[]};
  const eq=liquidityEvents(eqBars,eqPts,fake,[],"5m");if(!eq.levels.some(x=>x.equal&&x.count===2&&x.source==="EQH"))throw Error("EQH grouping failed");
