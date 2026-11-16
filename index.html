@@ -831,18 +831,51 @@ function detectOrderBlocks(bars,gaps,st){
  for(let i=CFG.atrPeriod+3;i<bars.length;i++){
   const dir=bars[i].c>bars[i].o?"BULLISH":bars[i].c<bars[i].o?"BEARISH":null;if(!dir||!displacementAt(bars,i,dir,gaps,st.events))continue;
   let origin=-1;for(let k=i-1;k>=Math.max(0,i-6);k--){const opposite=dir==="BULLISH"?bars[k].c<bars[k].o:bars[k].c>bars[k].o;if(opposite){origin=k;break;}}
-  const hasFvg=gaps.some(g=>g.i===i&&g.dir===dir);if(origin<0&&hasFvg)origin=i-1;if(origin<0)continue;
-  const ob={id:dir+"-"+bars[origin].time+"-"+bars[i].time,dir,origin,created:i,time:bars[origin].time,createdTime:bars[i].time,lo:bars[origin].l,hi:bars[origin].h,firstTap:null,invalid:null,hasFvg};
-  for(let j=i+1;j<bars.length;j++){const b=bars[j],invalid=dir==="BULLISH"?b.c<ob.lo:b.c>ob.hi,touched=b.h>=ob.lo&&b.l<=ob.hi;
-   // Invalidation wins if one candle both overlaps the zone and closes through its far boundary.
-   if(invalid){ob.invalid=j;break;}
-   // Record the first wick touch, but keep monitoring later candles for invalidation.
-   if(touched&&ob.firstTap===null)ob.firstTap=j;
-  }
-  blocks.push(ob);
- }
- return blocks.slice(-35);
-}
+  
+   const ob={
+    id:dir+"-"+bars[origin].time+"-"+bars[i].time,
+    dir,
+    origin,
+    created:i,
+    time:bars[origin].time,
+    createdTime:bars[i].time,
+    lo:bars[origin].l,
+    hi:bars[origin].h,
+    firstTap:null,
+    filled:null,
+    invalid:null,
+    hasFvg
+   };
+
+   for(let j=i+1;j<bars.length;j++){
+    const b=bars[j];
+
+    const filled=dir==="BULLISH"
+     ?b.l<=ob.lo
+     :b.h>=ob.hi;
+
+    const invalid=dir==="BULLISH"
+     ?b.c<ob.lo
+     :b.c>ob.hi;
+
+    const touched=b.h>=ob.lo&&b.l<=ob.hi;
+
+    // Record the first complete fill at the far OB boundary.
+    if(filled&&ob.filled===null){
+     ob.filled=j;
+    }
+
+    // Invalidation still takes priority over recording a normal touch.
+    if(invalid){
+     ob.invalid=j;
+     break;
+    }
+
+    if(touched&&ob.firstTap===null){
+     ob.firstTap=j;
+    }
+   }
+
  
 function findIDMForOB(a,ob){
  const dir=ob.dir;
@@ -937,30 +970,42 @@ function entrySignals(selected){
 
   for(const liquidity of clearances){
 
-   // The OB may form before or after liquidity clearance.
-   // Its qualifying touch must happen after clearance.
-   const start=Math.max(ob.created+1,liquidity.i+1);
+   
+    // The OB may form before or after liquidity clearance.
+    // Its qualifying touch must happen after clearance.
+    const start=Math.max(ob.created+1,liquidity.i+1);
 
-   // Do not use an OB already invalidated before the eligible touch.
-   if(ob.invalid!==null&&ob.invalid<=start)continue;
+    // A complete fill on or before clearance permanently disqualifies this OB.
+    if(ob.filled!==null&&ob.filled<=liquidity.i)continue;
 
-   let entryIndex=null;
+    // Do not use an OB already invalidated before the eligible touch.
+    if(ob.invalid!==null&&ob.invalid<=start)continue;
 
-   for(let j=start;j<bars.length;j++){
-    const b=bars[j];
+    let entryIndex=null;
 
-    const invalid=ob.dir==="BULLISH"
-     ?b.c<ob.lo
-     :b.c>ob.hi;
+    for(let j=start;j<bars.length;j++){
+     const b=bars[j];
 
-    if(invalid)break;
+     // A complete fill before entry disqualifies this OB.
+     const completelyFilled=ob.dir==="BULLISH"
+      ?b.l<=ob.lo
+      :b.h>=ob.hi;
 
-    // Wick OR body overlap with the OB counts as a touch.
-    if(b.h>=ob.lo&&b.l<=ob.hi){
-     entryIndex=j;
-     break;
+     if(completelyFilled)break;
+
+     const invalid=ob.dir==="BULLISH"
+      ?b.c<ob.lo
+      :b.c>ob.hi;
+
+     if(invalid)break;
+
+     // Wick OR body overlap with the OB counts as a touch.
+     if(b.h>=ob.lo&&b.l<=ob.hi){
+      entryIndex=j;
+      break;
+     }
     }
-   }
+
 
    if(entryIndex!==null){
     signals.push({
