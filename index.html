@@ -1077,7 +1077,12 @@ function latestEntrySignal(signals,a){
  for(const e of a.liq.events)if(e.i>=recent)emit(a.tf+"-liq-"+e.time,a.tf+" "+e.type+" "+e.kind+" at "+fmt(e.level));
  for(const e of a.st.events)if(e.i>=recent)emit(a.tf+"-structure-"+a.bars[e.i].time,a.tf+" "+e.dir+" "+e.kind);
  for(const ob of a.zones){if(ob.created>=recent)emit(a.tf+"-ob-"+ob.id,a.tf+" new "+ob.dir+" OB detected.");
-  if(ob.firstTap!==null&&ob.firstTap>=recent)emit(a.tf+"-tap-"+ob.id,a.tf+" first OB zone touch detected (wick/body overlap).");
+  
+if(ob.firstTap!==null&&ob.firstTap>=recent)emit(
+ a.tf+"-tap-"+ob.id,
+ a.tf+" "+ob.dir+" OB TOUCHED (informational only; liquidity clearance not required, wick/body overlap)."
+);
+
   if(ob.invalid!==null&&ob.invalid>=recent)emit(a.tf+"-invalid-"+ob.id,a.tf+" "+ob.dir+" OB invalidated.");}
 }
 
