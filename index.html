@@ -921,86 +921,84 @@ function emit(key,msg){
  if(S.seen.has(key))return;S.seen.add(key);S.events.unshift({t:Date.now(),msg});S.events=S.events.slice(0,12);renderEvents();
  if("Notification"in window&&Notification.permission==="granted"){try{new Notification("BTC Hartley SMC",{body:msg,tag:key});}catch(e){console.warn(e);}}
 }
- function setupStates(selected){
- if(!selected)return[];
 
- const out=[];
+
+function entrySignals(selected){
+ if(!selected)return[];
+ const signals=[];
+ const bars=selected.bars;
 
  for(const ob of selected.zones){
-  const tap=ob.firstTap;
-  const dir=ob.dir;
+  const requiredType=ob.dir==="BEARISH"?"BSL":"SSL";
 
-  const valid=ob.invalid===null||
-   (tap!==null&&ob.invalid>tap);
+  const clearances=selected.liq.events
+   .filter(e=>e.type===requiredType)
+   .sort((x,y)=>x.i-y.i);
 
-  const idm=findIDMForOB(selected,ob);
-  const isTapped=tap!==null;
+  for(const liquidity of clearances){
 
-  let state="OB detected";
+   // The OB may form before or after liquidity clearance.
+   // Its qualifying touch must happen after clearance.
+   const start=Math.max(ob.created+1,liquidity.i+1);
 
-  if(ob.invalid!==null&&
-     (tap===null||ob.invalid<tap)){
-   state="Invalidated before first touch";
-  }else if(isTapped&&idm){
-   state=valid
-    ?"QUALIFIED · IDM swept and first OB tap"
-    :"QUALIFIED · IDM swept and first OB tap · later invalidated";
-  }else if(isTapped){
-   state="Tapped · no qualifying IDM sweep";
-  }else if(idm){
-   state="IDM swept · waiting for first OB touch";
+   // Do not use an OB already invalidated before the eligible touch.
+   if(ob.invalid!==null&&ob.invalid<=start)continue;
+
+   let entryIndex=null;
+
+   for(let j=start;j<bars.length;j++){
+    const b=bars[j];
+
+    const invalid=ob.dir==="BULLISH"
+     ?b.c<ob.lo
+     :b.c>ob.hi;
+
+    if(invalid)break;
+
+    // Wick OR body overlap with the OB counts as a touch.
+    if(b.h>=ob.lo&&b.l<=ob.hi){
+     entryIndex=j;
+     break;
+    }
+   }
+
+   if(entryIndex!==null){
+    signals.push({
+     ob,
+     liquidity,
+     entryIndex,
+     dir:ob.dir,
+     side:ob.dir==="BULLISH"?"BUY":"SELL"
+    });
+   }
   }
-
-  const targets=selected.liq.levels.filter(p=>
-   (p.clearance===null||
-    (tap!==null&&p.clearance.i>tap&&
-     (ob.invalid===null||p.clearance.i<ob.invalid)))&&
-   (dir==="BULLISH"
-    ?p.type==="high"&&p.level>ob.hi
-    :p.type==="low"&&p.level<ob.lo)
-  );
-
-  targets.sort((x,y)=>
-   dir==="BULLISH"
-    ?x.level-y.level
-    :y.level-x.level
-  );
-
-  out.push({
-   ob,
-   idm,
-   sweep:idm,
-   state,
-   confirm:"Not required",
-   confirmEvent:null,
-   target:targets[0]||null,
-   valid
-  });
  }
 
- return out;
+ // Prevent duplicate signals from multiple clearances
+ // qualifying the exact same OB touch.
+ const unique=new Map();
+
+ for(const signal of signals){
+  const key=signal.ob.id+"-"+signal.entryIndex;
+  const prior=unique.get(key);
+
+  if(!prior||signal.liquidity.i>prior.liquidity.i){
+   unique.set(key,signal);
+  }
  }
-function isActiveSetup(s){
- return !!(
-  s&&
-  s.sweep&&
-  s.ob&&
-  s.ob.firstTap!==null&&
-  s.state.startsWith("QUALIFIED")&&
-  s.ob.invalid===null&&
-  s.valid&&
-  !(s.target&&s.target.clearance)
+
+ return [...unique.values()].sort((x,y)=>
+  x.entryIndex-y.entryIndex||
+  x.liquidity.i-y.liquidity.i
  );
 }
 
-function latestActiveSetup(states,a){
- return states
-  .filter(isActiveSetup)
-  .sort((x,y)=>
-   a.bars[y.ob.firstTap].time-
-   a.bars[x.ob.firstTap].time
-  )[0]||null;
+function latestEntrySignal(signals,a){
+ return signals.slice().sort((x,y)=>
+  a.bars[y.entryIndex].time-a.bars[x.entryIndex].time
+ )[0]||null;
 }
+
  function scanEvents(a){
  const recent=a.bars.length-3;
  for(const e of a.liq.events)if(e.i>=recent)emit(a.tf+"-liq-"+e.time,a.tf+" "+e.type+" "+e.kind+" at "+fmt(e.level));
@@ -1009,51 +1007,36 @@ function latestActiveSetup(states,a){
   if(ob.firstTap!==null&&ob.firstTap>=recent)emit(a.tf+"-tap-"+ob.id,a.tf+" first wick touch of "+ob.dir+" OB.");
   if(ob.invalid!==null&&ob.invalid>=recent)emit(a.tf+"-invalid-"+ob.id,a.tf+" "+ob.dir+" OB invalidated.");}
 }
+
 function scanQualifiedSetups(){
  for(const tf of TF){
   const a=S.data[tf];
   if(!a)continue;
 
-  for(const s of setupStates(a)){
-   if(
-    !s.state.startsWith("QUALIFIED")||
-    !s.valid||
-    s.ob.invalid!==null||
-    s.ob.firstTap===null
-   )continue;
+  for(const signal of entrySignals(a)){
+   const entryIndex=signal.entryIndex;
 
-   const tapIndex=s.ob.firstTap;
-
-   // Do not replay old historical setups on initial load.
-   if(tapIndex<a.bars.length-3)continue;
+   // Avoid replaying old historical signals on initial load.
+   if(entryIndex<a.bars.length-3)continue;
 
    emit(
-    "qualified-"+tf+"-"+s.ob.id,
+    "entry-"+tf+"-"+signal.ob.id+"-"+signal.liquidity.i+"-"+entryIndex,
     "BTCUSD | "+tf.toUpperCase()+
-    " | QUALIFIED "+s.ob.dir+
-    " | IDM swept at "+fmt(s.idm.level)+
-    " | First OB touch. Target: "+
-    (s.target?fmt(s.target.level):"not identified")+"."
+    " | "+signal.side+" ENTRY"+
+    " | "+signal.liquidity.type+" cleared at "+fmt(signal.liquidity.level)+
+    " | "+signal.ob.dir+" OB touched at "+fmt(a.bars[entryIndex].c)+
+    " (wick/body touch accepted)."
    );
-
-   if(s.target&&s.target.clearance&&
-      s.target.clearance.i>tapIndex){
-    emit(
-     "target-hit-"+tf+"-"+s.ob.id,
-     "BTCUSD | "+tf.toUpperCase()+
-     " | Opposing liquidity target reached at "+
-     fmt(s.target.level)+"."
-    );
-   }
   }
  }
 }
+
 function renderEvents(){
  const box=$("events");box.replaceChildren();if(!S.events.length){const d=document.createElement("div");d.className="item";d.textContent="No new events this session.";box.append(d);return;}
  for(const e of S.events){const d=document.createElement("div");d.className="item";d.textContent=timeLabel(e.t)+" · "+e.msg;box.append(d);}
 }
-function renderSignal(a){
 
+function renderSignal(a){
  const badge=$("signalBadge");
  const direction=$("signalDirection");
  const detail=$("signalDetail");
@@ -1064,60 +1047,39 @@ function renderSignal(a){
  if(!a){
   badge.textContent="WAIT";
   direction.textContent="WAIT";
-  detail.textContent=
-   "Waiting for "+$("tf").value+" analysis.";
+  detail.textContent="Waiting for "+$("tf").value+" analysis.";
   return;
  }
 
- const states=setupStates(a);
- const active=latestActiveSetup(states,a);
+ const signals=entrySignals(a);
+ const latest=latestEntrySignal(signals,a);
 
- if(!active){
-
+ if(!latest){
   badge.textContent="WAIT";
   direction.textContent="WAIT";
-
-  const previous=states
-   .filter(s=>s.sweep&&s.ob.firstTap!==null)
-   .sort((x,y)=>
-    a.bars[y.ob.firstTap].time-
-    a.bars[x.ob.firstTap].time
-   )[0];
-
-  detail.textContent=previous
-   ? "No active setup. The latest qualified setup is invalidated or its target has been reached."
-   : "Waiting for this timeframe's IDM sweep and first OB touch.";
-
+  detail.textContent=
+   "Waiting for BSL clearance then bearish OB touch, or SSL clearance then bullish OB touch.";
   return;
  }
 
- const dir=active.ob.dir;
- const word=dir==="BULLISH"?"BUY":"SELL";
- const tap=a.bars[active.ob.firstTap];
+ const word=latest.side;
+ const tap=a.bars[latest.entryIndex];
 
  badge.textContent=word;
  direction.textContent=word;
 
  badge.className="status "+
-  (dir==="BULLISH"?"signal-buy":"signal-sell");
+  (word==="BUY"?"signal-buy":"signal-sell");
 
  direction.className="price "+
-  (dir==="BULLISH"?"signal-buy":"signal-sell");
+  (word==="BUY"?"signal-buy":"signal-sell");
 
-  detail.textContent=
- a.tf+
- " · IDM swept at "+fmt(active.idm.level)+
- " · First OB touch at "+fmt(tap.c)+
- (active.target
-  ?" · Target liquidity: "+fmt(active.target.level)
-  :" · No opposing target identified")+".";
+ detail.textContent=
+  a.tf+" · "+latest.liquidity.type+" cleared at "+
+  fmt(latest.liquidity.level)+" · "+latest.ob.dir+
+  " OB touched at "+fmt(tap.c)+" · Wick or body touch accepted.";
 }
- 
- function renderContext(){
- const h=h4Bias(S.data["4h"]);$("h4").textContent=h.bias;$("h4").style.color=h.bias==="BULLISH"?C.bull:h.bias==="BEARISH"?C.bear:C.muted;$("biasInfo").textContent=h.reason;
- const one=S.data["1h"];if(one){$("h1").textContent=one.st.bias+" structure";$("h1").style.color=one.st.bias==="BULLISH"?C.bull:one.st.bias==="BEARISH"?C.bear:C.muted;}
- const fifteen=S.data["15m"];if(fifteen){const recent=fifteen.liq.events.slice(-3).reverse();$("m15").textContent=recent.length?recent.map(e=>e.type+" "+e.kind).join(" · "):"No recent sweep";}
-}
+
 function renderChart(canvas,a){
  const ctx=canvas.getContext("2d");if(!ctx)throw Error("Canvas unavailable");
  const rect=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),w=Math.max(320,Math.floor((rect.width||canvas.width)*dpr)),h=Math.max(320,Math.floor((rect.height||canvas.height)*dpr));
