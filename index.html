@@ -825,58 +825,86 @@ function displacementAt(bars,i,dir,gaps,structEvents){
  const b=bars[i],vol=atr(bars,i-1);if(!vol)return false;const range=b.h-b.l,body=Math.abs(b.c-b.o);if(range<=0||body<vol*CFG.displacementAtr)return false;
  const bull=(b.c-b.l)/range,bear=(b.h-b.c)/range,directional=dir==="BULLISH"?b.c>b.o&&bull>=CFG.closeStrength:b.c<b.o&&bear>=CFG.closeStrength;
  const gap=gaps.some(g=>g.i===i&&g.dir===dir),brk=structEvents.some(e=>e.i===i&&e.dir===dir);return directional&&(gap||brk);
-}
+ }
+
 function detectOrderBlocks(bars,gaps,st){
  const blocks=[];
+
  for(let i=CFG.atrPeriod+3;i<bars.length;i++){
-  const dir=bars[i].c>bars[i].o?"BULLISH":bars[i].c<bars[i].o?"BEARISH":null;if(!dir||!displacementAt(bars,i,dir,gaps,st.events))continue;
-  let origin=-1;for(let k=i-1;k>=Math.max(0,i-6);k--){const opposite=dir==="BULLISH"?bars[k].c<bars[k].o:bars[k].c>bars[k].o;if(opposite){origin=k;break;}}
-  
-   const ob={
-    id:dir+"-"+bars[origin].time+"-"+bars[i].time,
-    dir,
-    origin,
-    created:i,
-    time:bars[origin].time,
-    createdTime:bars[i].time,
-    lo:bars[origin].l,
-    hi:bars[origin].h,
-    firstTap:null,
-    filled:null,
-    invalid:null,
-    hasFvg
-   };
+  const dir=bars[i].c>bars[i].o
+   ?"BULLISH"
+   :bars[i].c<bars[i].o
+    ?"BEARISH"
+    :null;
 
-   for(let j=i+1;j<bars.length;j++){
-    const b=bars[j];
+  if(!dir||!displacementAt(bars,i,dir,gaps,st.events))continue;
 
-    const filled=dir==="BULLISH"
-     ?b.l<=ob.lo
-     :b.h>=ob.hi;
+  let origin=-1;
 
-    const invalid=dir==="BULLISH"
-     ?b.c<ob.lo
-     :b.c>ob.hi;
+  for(let k=i-1;k>=Math.max(0,i-6);k--){
+   const opposite=dir==="BULLISH"
+    ?bars[k].c<bars[k].o
+    :bars[k].c>bars[k].o;
 
-    const touched=b.h>=ob.lo&&b.l<=ob.hi;
+   if(opposite){
+    origin=k;
+    break;
+   }
+  }
 
-    // Record the first complete fill at the far OB boundary.
-    if(filled&&ob.filled===null){
-     ob.filled=j;
-    }
+  const hasFvg=gaps.some(g=>g.i===i&&g.dir===dir);
 
-    // Invalidation still takes priority over recording a normal touch.
-    if(invalid){
-     ob.invalid=j;
-     break;
-    }
+  if(origin<0&&hasFvg)origin=i-1;
+  if(origin<0)continue;
 
-    if(touched&&ob.firstTap===null){
-     ob.firstTap=j;
-    }
+  const ob={
+   id:dir+"-"+bars[origin].time+"-"+bars[i].time,
+   dir,
+   origin,
+   created:i,
+   time:bars[origin].time,
+   createdTime:bars[i].time,
+   lo:bars[origin].l,
+   hi:bars[origin].h,
+   firstTap:null,
+   filled:null,
+   invalid:null,
+   hasFvg
+  };
+
+  for(let j=i+1;j<bars.length;j++){
+   const b=bars[j];
+
+   const filled=dir==="BULLISH"
+    ?b.l<=ob.lo
+    :b.h>=ob.hi;
+
+   const invalid=dir==="BULLISH"
+    ?b.c<ob.lo
+    :b.c>ob.hi;
+
+   const touched=b.h>=ob.lo&&b.l<=ob.hi;
+
+   if(filled&&ob.filled===null){
+    ob.filled=j;
    }
 
- 
+   if(invalid){
+    ob.invalid=j;
+    break;
+   }
+
+   if(touched&&ob.firstTap===null){
+    ob.firstTap=j;
+   }
+  }
+
+  blocks.push(ob);
+ }
+
+ return blocks.slice(-35);
+}
+
 function findIDMForOB(a,ob){
  const dir=ob.dir;
  const type=dir==="BEARISH"?"high":"low";
