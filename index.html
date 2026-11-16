@@ -1004,7 +1004,7 @@ function latestEntrySignal(signals,a){
  for(const e of a.liq.events)if(e.i>=recent)emit(a.tf+"-liq-"+e.time,a.tf+" "+e.type+" "+e.kind+" at "+fmt(e.level));
  for(const e of a.st.events)if(e.i>=recent)emit(a.tf+"-structure-"+a.bars[e.i].time,a.tf+" "+e.dir+" "+e.kind);
  for(const ob of a.zones){if(ob.created>=recent)emit(a.tf+"-ob-"+ob.id,a.tf+" new "+ob.dir+" OB detected.");
-  if(ob.firstTap!==null&&ob.firstTap>=recent)emit(a.tf+"-tap-"+ob.id,a.tf+" first wick touch of "+ob.dir+" OB.");
+  if(ob.firstTap!==null&&ob.firstTap>=recent)emit(a.tf+"-tap-"+ob.id,a.tf+" first OB zone touch detected (wick/body overlap).");
   if(ob.invalid!==null&&ob.invalid>=recent)emit(a.tf+"-invalid-"+ob.id,a.tf+" "+ob.dir+" OB invalidated.");}
 }
 
@@ -1237,42 +1237,23 @@ for(const e of a.liq.events.filter(e=>visible(e.i))){
  ctx.arc(xx,yy,Math.max(3,step*.22),0,Math.PI*2);
  ctx.fill();
 }
- // Current and historical BUY/SELL signals.
 
-const signalStates=setupStates(a);
+ // Current and historical BSL/SSL -> OB-touch entry signals.
+ const signalStates=entrySignals(a);
+ const activeSetup=latestEntrySignal(signalStates,a);
 
-const activeSetup=latestActiveSetup(
- signalStates,
- a
-);
+ for(const signal of signalStates){
+  const i=signal.entryIndex;
+  if(!visible(i))continue;
 
-for(const s of signalStates){
+  const b=a.bars[i];
+  const xx=x(i-offset);
+  const buy=signal.side==="BUY";
+  const isCurrent=signal===activeSetup;
+  const color=isCurrent
+   ?(buy?C.bull:C.bear)
+   :"#788493";
 
- if(
-  !s.sweep||
-  s.ob.firstTap===null||
-  !s.state.startsWith("QUALIFIED")
- )continue;
-
- const i=s.ob.firstTap;
-
- if(!visible(i))continue;
-
- const b=a.bars[i];
-
- const xx=x(i-offset);
-
- const buy=s.ob.dir==="BULLISH";
-
- // Identify the currently active setup.
- const isCurrent=s===activeSetup;
-
- // Current signals are bright; historical signals are muted.
- const color=isCurrent
-  ?(buy?C.bull:C.bear)
-  :"#788493";
-
- 
   const tipY=buy
    ?Math.min(bottom-12*dpr,y(b.l)+18*dpr)
    :Math.max(top+12*dpr,y(b.h)-18*dpr);
@@ -1290,13 +1271,11 @@ for(const s of signalStates){
   ctx.lineCap="round";
   ctx.lineJoin="round";
 
-  // Arrow shaft.
   ctx.beginPath();
   ctx.moveTo(xx,tailY);
   ctx.lineTo(xx,buy?tipY+arrowSize:tipY-arrowSize);
   ctx.stroke();
 
-  // Larger arrowhead.
   ctx.beginPath();
 
   if(buy){
@@ -1311,38 +1290,81 @@ for(const s of signalStates){
 
   ctx.closePath();
   ctx.fill();
-
   ctx.restore();
 
- // Distinguish current from historical signals.
- drawChartLabel(
-  (isCurrent?"":"PRIOR ")+
-  (buy?"BUY":"SELL"),
-  xx,
-  buy?tailY+10:tailY-10,
-  color
- );
+  drawChartLabel(
+   (isCurrent?"":"PRIOR ")+signal.side,
+   xx,
+   buy?tailY+10:tailY-10,
+   color
+  );
+ }
 
-                      }
 } // Close renderChart()
-
 function renderObs(a){
- const box=$("observations");box.replaceChildren();
- if(!a){$("count").textContent="0 observations";return;}
- const states=setupStates(a),items=[];
- for(const s of states.slice(-12).reverse()){const ob=s.ob;items.push({title:s.state,detail:ob.dir+" OB "+fmt(ob.lo)+"–"+fmt(ob.hi)+" · formed "+timeLabel(ob.createdTime)+(ob.firstTap!==null?" · first tap "+timeLabel(a.bars[ob.firstTap].time):" · not yet tapped")+(s.target?" · next liquidity target "+fmt(s.target.level):" · no visible un-cleared opposing target")+(s.idm?" · IDM swept at "+fmt(s.idm.level)+" · "+timeLabel(s.idm.time):"")});}
- for(const e of a.st.events.slice(-3).reverse())items.push({title:e.dir+" "+e.kind,detail:fmt(e.level)+" · "+timeLabel(a.bars[e.i].time)});
- for(const p of a.liq.levels.filter(p=>p.clearance===null).slice(0,5))
-items.push({
- title:p.side,
- detail:fmt(p.level)+" · untouched"
-});
- for(const e of a.liq.events.filter(e=>e.kind==="sweep").slice(-3).reverse())
- items.push({title:a.tf+" "+e.type+" sweep",detail:fmt(e.level)+" · "+timeLabel(e.time)});
+ const box=$("observations");
+ box.replaceChildren();
+
+ if(!a){
+  $("count").textContent="0 observations";
+  return;
+ }
+
+ const signals=entrySignals(a);
+ const items=[];
+
+ for(const signal of signals.slice(-12).reverse()){
+  items.push({
+   title:signal.side+" ENTRY",
+   detail:
+    signal.liquidity.type+" cleared at "+
+    fmt(signal.liquidity.level)+" · "+
+    signal.ob.dir+" OB formed "+
+    timeLabel(signal.ob.createdTime)+" · touched "+
+    timeLabel(a.bars[signal.entryIndex].time)+
+    " · wick/body accepted"
+  });
+ }
+
+ for(const e of a.liq.events.slice(-4).reverse()){
+  items.push({
+   title:e.type+" "+e.kind,
+   detail:fmt(e.level)+" · "+timeLabel(e.time)
+  });
+ }
+
+ for(const p of a.liq.levels.filter(p=>p.clearance===null).slice(0,5)){
+  items.push({
+   title:p.side,
+   detail:fmt(p.level)+" · untouched"
+  });
+ }
+
  $("count").textContent=items.length+" observations";
- if(!items.length){const empty=document.createElement("div");empty.className="item";empty.textContent="No qualifying observations on this timeframe.";box.append(empty);return;}
- for(const v of items.slice(0,12)){const d=document.createElement("div"),s=document.createElement("strong"),t=document.createElement("div");d.className="item";s.textContent=v.title;t.className="detail";t.textContent=v.detail;d.append(s,t);box.append(d);}
+
+ if(!items.length){
+  const empty=document.createElement("div");
+  empty.className="item";
+  empty.textContent="No qualifying observations on this timeframe.";
+  box.append(empty);
+  return;
+ }
+
+ for(const v of items.slice(0,12)){
+  const d=document.createElement("div");
+  const strong=document.createElement("strong");
+  const t=document.createElement("div");
+
+  d.className="item";
+  strong.textContent=v.title;
+  t.className="detail";
+  t.textContent=v.detail;
+
+  d.append(strong,t);
+  box.append(d);
+ }
 }
+
 function renderSelected(){
 
  const tf=$("tf").value;
@@ -1367,7 +1389,7 @@ function renderSelected(){
    tf+
    " · "+
    Math.min(115,a.bars.length)+
-   " completed candles · arrows mark qualifying first OB wick retests · source: "+
+   " completed candles · arrows mark BSL/SSL clearance entry touches · source: "+
    a.source+
    (S.errors[tf]?" · STALE DATA":"");
 
