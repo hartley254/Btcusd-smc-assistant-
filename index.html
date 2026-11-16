@@ -579,7 +579,7 @@ const TF=["1m","5m","15m","1h","4h"],SEC={"1m":60,"5m":300,"15m":900,"1h":3600,"
 const LIMIT=420,HOUR=3600000,FOUR_HOURS=14400000;
 const C={bg:"#080e17",grid:"#263649",muted:"#9aabba",bull:"#13b99a",bear:"#ed5266",fvg:"#9b65ef",bsl:"#f05a66",ssl:"#24cf83",bos:"#9ce6b5",warn:"#f0bc63"};
 const CFG={pivotLeft:2,pivotRight:2,atrPeriod:14,displacementAtr:1.15,closeStrength:.72,fvgMinAtr:.12,liquidityToleranceAtr:.08,maxSwingAge:380,liquidityDisplacementWindow:8,minLiquidityScore:2,maxActiveLiquidityPools:8,maxTakenLiquidityPools:4};
-const S={data:Object.create(null),events:[],seen:new Set(),errors:Object.create(null),updated:Object.create(null),busy:false};
+const S={data:Object.create(null),events:[],seen:new Set(),errors:Object.create(null),updated:Object.create(null),busy:false,liveLastPrice:null,liveSocket:null,liveReconnect:null};
 const fmt=n=>Number.isFinite(n)?"$"+n.toLocaleString("en-US",{maximumFractionDigits:2}):"—";
 const timeLabel=t=>new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -1108,7 +1108,118 @@ function scanQualifiedSetups(){
   }
  }
 }
+function scanLiveEntryTouches(price){
+ if(!Number.isFinite(price))return;
 
+ const previous=S.liveLastPrice;
+
+ if(previous!==null){
+  for(const tf of TF){
+   const a=S.data[tf];
+   if(!a||!a.bars.length)continue;
+
+   const completedSignals=entrySignals(a);
+
+   for(const ob of a.zones){
+    const requiredType=ob.dir==="BEARISH"?"BSL":"SSL";
+
+    const clearances=a.liq.events
+     .filter(e=>e.type===requiredType)
+     .sort((x,y)=>x.i-y.i);
+
+    if(!clearances.length)continue;
+
+    // Use the latest eligible liquidity clearance.
+    const liquidity=clearances[clearances.length-1];
+
+    const start=Math.max(
+     ob.created+1,
+     liquidity.i+1
+    );
+
+    // The setup must be eligible by the forming candle.
+    if(start>a.bars.length)continue;
+
+    // Any complete fill permanently disqualifies the OB.
+    if(ob.filled!==null)continue;
+
+    // Do not use an already invalidated OB.
+    if(ob.invalid!==null)continue;
+
+    // A completed candle has already triggered this OB.
+    if(completedSignals.some(s=>s.ob.id===ob.id))continue;
+
+    // The price must cross into the OB from outside.
+    const wasInside=
+     previous>=ob.lo&&previous<=ob.hi;
+
+    const isInside=
+     price>=ob.lo&&price<=ob.hi;
+
+    if(wasInside||!isInside)continue;
+
+    const liveIndex=a.bars.length;
+
+    emit(
+     "entry-"+tf+"-"+ob.id+"-"+liquidity.i+"-"+liveIndex,
+     "BTCUSD | "+tf.toUpperCase()+
+     " | "+(ob.dir==="BULLISH"?"BUY":"SELL")+" ENTRY"+
+     " | "+liquidity.type+" cleared at "+fmt(liquidity.level)+
+     " | "+ob.dir+" OB LIVE TOUCH at "+fmt(price)+
+     " (forming candle; wick/body contact)."
+    );
+   }
+  }
+ }
+
+ S.liveLastPrice=price;
+}
+
+function connectLiveTrades(){
+ if(typeof WebSocket==="undefined"){
+  console.warn("Live WebSocket is not supported.");
+  return;
+ }
+
+ if(S.liveSocket)return;
+
+ const ws=new WebSocket("wss://ws-feed.exchange.coinbase.com");
+ S.liveSocket=ws;
+
+ ws.onopen=()=>{
+  if(S.liveSocket!==ws)return;
+
+  ws.send(JSON.stringify({
+   type:"subscribe",
+   product_ids:["BTC-USD"],
+   channels:["matches"]
+  }));
+ };
+
+ ws.onmessage=event=>{
+  try{
+   const msg=JSON.parse(event.data);
+
+   if(msg.type!=="match"||msg.product_id!=="BTC-USD")return;
+
+   scanLiveEntryTouches(Number(msg.price));
+
+  }catch(e){
+   console.warn("Live trade processing error:",e);
+  }
+ };
+
+ ws.onerror=()=>{
+  try{ws.close();}catch(e){}
+ };
+
+ ws.onclose=()=>{
+  if(S.liveSocket===ws){
+   S.liveSocket=null;
+   S.liveReconnect=setTimeout(connectLiveTrades,5000);
+  }
+ };
+}
 function renderEvents(){
  const box=$("events");box.replaceChildren();if(!S.events.length){const d=document.createElement("div");d.className="item";d.textContent="No new events this session.";box.append(d);return;}
  for(const e of S.events){const d=document.createElement("div");d.className="item";d.textContent=timeLabel(e.t)+" · "+e.msg;box.append(d);}
