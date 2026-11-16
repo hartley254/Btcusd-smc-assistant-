@@ -1636,6 +1636,64 @@ function syntheticTests(){
   if(!bearFull||bearFull.filled!==19)
    throw Error("Bearish detector complete-fill tracking failed");
 
+  // 8. Integration: actual detected OBs must produce the correct entry signals.
+  const bullPipelineBars=makeDetectorBars("BULLISH");
+  bullPipelineBars[18]={...bullPipelineBars[18],o:100,c:100,h:101.5,l:99};
+  const bullPipelineOB=detectTestOB("BULLISH",bullPipelineBars);
+  const bullPipelineSignals=entrySignals({
+   bars:bullPipelineBars,
+   zones:[bullPipelineOB],
+   liq:{events:[{
+    type:"SSL",kind:"sweep",i:17,level:95,
+    time:bullPipelineBars[17].time
+   }]}
+  });
+  if(!bullPipelineOB||bullPipelineSignals.length!==1||
+     bullPipelineSignals[0].side!=="BUY"||
+     bullPipelineSignals[0].entryIndex!==18)
+   throw Error("Bullish detected-OB entry integration failed");
+
+  const bearPipelineBars=makeDetectorBars("BEARISH");
+  bearPipelineBars[18]={...bearPipelineBars[18],o:100,c:100,h:101,l:98.5};
+  const bearPipelineOB=detectTestOB("BEARISH",bearPipelineBars);
+  const bearPipelineSignals=entrySignals({
+   bars:bearPipelineBars,
+   zones:[bearPipelineOB],
+   liq:{events:[{
+    type:"BSL",kind:"sweep",i:17,level:105,
+    time:bearPipelineBars[17].time
+   }]}
+  });
+  if(!bearPipelineOB||bearPipelineSignals.length!==1||
+     bearPipelineSignals[0].side!=="SELL"||
+     bearPipelineSignals[0].entryIndex!==18)
+   throw Error("Bearish detected-OB entry integration failed");
+
+  // 9. A complete fill after clearance must block the later entry.
+  const bullPipelineFilled=makeDetectorBars("BULLISH");
+  bullPipelineFilled[18]={...bullPipelineFilled[18],o:100,c:99,h:101,l:97};
+  if(entrySignals({
+   bars:bullPipelineFilled,
+   zones:[detectTestOB("BULLISH",bullPipelineFilled)],
+   liq:{events:[{
+    type:"SSL",kind:"sweep",i:17,level:95,
+    time:bullPipelineFilled[17].time
+   }]}
+  }).length!==0)
+   throw Error("Bullish detected-OB post-clearance fill rejection failed");
+
+  const bearPipelineFilled=makeDetectorBars("BEARISH");
+  bearPipelineFilled[18]={...bearPipelineFilled[18],o:100,c:101,h:103,l:99};
+  if(entrySignals({
+   bars:bearPipelineFilled,
+   zones:[detectTestOB("BEARISH",bearPipelineFilled)],
+   liq:{events:[{
+    type:"BSL",kind:"sweep",i:17,level:105,
+    time:bearPipelineFilled[17].time
+   }]}
+  }).length!==0)
+   throw Error("Bearish detected-OB post-clearance fill rejection failed");
+
  const eqBars=bars.map(x=>({...x}));eqBars[20]={...eqBars[20],h:110};eqBars[30]={...eqBars[30],h:110};
  const eqPts=[{type:"high",i:20,level:110,confirmed:22},{type:"high",i:30,level:110,confirmed:32}],fake={labels:[],events:[]};
  const eq=liquidityEvents(eqBars,eqPts,fake,[],"5m");if(!eq.levels.some(x=>x.equal&&x.count===2&&x.source==="EQH"))throw Error("EQH grouping failed");
