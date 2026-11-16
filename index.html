@@ -1490,6 +1490,98 @@ function syntheticTests(){
  if(analyse("5m",bars).bars.length!==80)throw Error("Basic analysis failed");
  const invalid=bars.map(x=>({...x}));invalid[20]={...invalid[20],h:0};let rejected=false;try{analyse("5m",invalid);}catch{rejected=true;}if(!rejected)throw Error("Invalid OHLC rejection failed");
  const zone={lo:100,hi:110},wick={h:100.01,l:99.5};if(!(wick.h>=zone.lo&&wick.l<=zone.hi))throw Error("Wick-touch geometry failed");
+ 
+  // BSL/SSL -> OB entry behavioural regression tests.
+  const makeEntryBars=()=>Array.from({length:7},(_,i)=>({
+   time:t+i*300000,o:103,h:104,l:102,c:103,v:10
+  }));
+
+  const makeTestOB=(dir,created=0,filled=null)=>({
+   id:"TEST-"+dir,
+   dir,
+   created,
+   lo:100,
+   hi:105,
+   filled,
+   invalid:null
+  });
+
+  const testEntry=(dir,bars,ob,clearanceIndex=2)=>{
+   const type=dir==="BULLISH"?"SSL":"BSL";
+   return entrySignals({
+    bars,
+    zones:[ob],
+    liq:{events:[{
+     type,
+     kind:"sweep",
+     i:clearanceIndex,
+     level:dir==="BULLISH"?95:110,
+     time:bars[clearanceIndex].time
+    }]}
+   });
+  };
+
+  // 1. Bullish OB: partial mitigation before SSL clearance remains eligible.
+  const bullPartialBars=makeEntryBars();
+  bullPartialBars[1]={...bullPartialBars[1],h:106,l:102,c:103};
+  bullPartialBars[3]={...bullPartialBars[3],h:106,l:102,c:103};
+  const bullPartial=testEntry(
+   "BULLISH",bullPartialBars,makeTestOB("BULLISH")
+  );
+  if(bullPartial.length!==1||bullPartial[0].side!=="BUY"||bullPartial[0].entryIndex!==3)
+   throw Error("Bullish partial mitigation eligibility failed");
+
+  // 2. Bearish OB: partial mitigation before BSL clearance remains eligible.
+  const bearPartialBars=makeEntryBars();
+  bearPartialBars[1]={...bearPartialBars[1],h:104,l:99,c:101};
+  bearPartialBars[3]={...bearPartialBars[3],h:104,l:99,c:101};
+  const bearPartial=testEntry(
+   "BEARISH",bearPartialBars,makeTestOB("BEARISH")
+  );
+  if(bearPartial.length!==1||bearPartial[0].side!=="SELL"||bearPartial[0].entryIndex!==3)
+   throw Error("Bearish partial mitigation eligibility failed");
+
+  // 3. Complete fill before clearance must disqualify bullish and bearish OBs.
+  const bullFilledBefore=testEntry(
+   "BULLISH",makeEntryBars(),makeTestOB("BULLISH",0,1)
+  );
+  if(bullFilledBefore.length!==0)
+   throw Error("Bullish pre-clearance complete-fill rejection failed");
+
+  const bearFilledBefore=testEntry(
+   "BEARISH",makeEntryBars(),makeTestOB("BEARISH",0,1)
+  );
+  if(bearFilledBefore.length!==0)
+   throw Error("Bearish pre-clearance complete-fill rejection failed");
+
+  // 4. Complete fill after clearance but before a later touch must disqualify.
+  const bullFilledAfterBars=makeEntryBars();
+  bullFilledAfterBars[3]={...bullFilledAfterBars[3],l:99};
+  bullFilledAfterBars[4]={...bullFilledAfterBars[4],h:106,l:102};
+  if(testEntry("BULLISH",bullFilledAfterBars,makeTestOB("BULLISH")).length!==0)
+   throw Error("Bullish post-clearance complete-fill rejection failed");
+
+  const bearFilledAfterBars=makeEntryBars();
+  bearFilledAfterBars[3]={...bearFilledAfterBars[3],h:106};
+  bearFilledAfterBars[4]={...bearFilledAfterBars[4],h:104,l:99};
+  if(testEntry("BEARISH",bearFilledAfterBars,makeTestOB("BEARISH")).length!==0)
+   throw Error("Bearish post-clearance complete-fill rejection failed");
+
+  // 5. An OB formed after clearance can still qualify on its next touch.
+  const laterOBBars=makeEntryBars();
+  laterOBBars[4]={...laterOBBars[4],h:106,l:102};
+  const laterOB=testEntry(
+   "BULLISH",laterOBBars,makeTestOB("BULLISH",3)
+  );
+  if(laterOB.length!==1||laterOB[0].entryIndex!==4)
+   throw Error("OB formed after clearance eligibility failed");
+
+  // 6. A touch on the clearance candle itself must not trigger an entry.
+  const sameCandleBars=makeEntryBars();
+  sameCandleBars[2]={...sameCandleBars[2],h:106,l:102};
+  if(testEntry("BULLISH",sameCandleBars,makeTestOB("BULLISH")).length!==0)
+   throw Error("Same-candle clearance/touch rejection failed");
+
  const eqBars=bars.map(x=>({...x}));eqBars[20]={...eqBars[20],h:110};eqBars[30]={...eqBars[30],h:110};
  const eqPts=[{type:"high",i:20,level:110,confirmed:22},{type:"high",i:30,level:110,confirmed:32}],fake={labels:[],events:[]};
  const eq=liquidityEvents(eqBars,eqPts,fake,[],"5m");if(!eq.levels.some(x=>x.equal&&x.count===2&&x.source==="EQH"))throw Error("EQH grouping failed");
