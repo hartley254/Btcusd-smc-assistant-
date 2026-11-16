@@ -1694,6 +1694,96 @@ function syntheticTests(){
   }).length!==0)
    throw Error("Bearish detected-OB post-clearance fill rejection failed");
 
+  // 10. Full pipeline: pivots -> liquidity clearance -> OB -> entry.
+  const makeFullPipelineBars=(dir)=>{
+   const out=Array.from({length:45},(_,i)=>({
+    time:t+i*300000,
+    o:100,h:100.5,l:99.5,c:100,v:10
+   }));
+
+   if(dir==="BULLISH"){
+    // Bullish OB and displacement.
+    out[16]={...out[16],o:101,c:99,h:102,l:98};
+    out[17]={...out[17],o:99,c:108,h:109,l:98};
+
+    // Two equal lows create SSL.
+    out[20]={...out[20],o:100,c:100,h:100.5,l:99};
+    out[30]={...out[30],o:100,c:100,h:100.5,l:99};
+
+    // SSL sweep without invalidating or completely filling the OB.
+    out[40]={...out[40],o:100,c:99.5,h:100.5,l:98.5};
+   }else{
+    // Bearish OB and displacement.
+    out[16]={...out[16],o:99,c:101,h:102,l:98};
+    out[17]={...out[17],o:101,c:92,h:102,l:91};
+
+    // Two equal highs create BSL.
+    out[20]={...out[20],o:100,c:100,h:101,l:99.5};
+    out[30]={...out[30],o:100,c:100,h:101,l:99.5};
+
+    // BSL sweep without invalidating or completely filling the OB.
+    out[40]={...out[40],o:101,c:100.5,h:101.5,l:100};
+   }
+
+   // First eligible OB touch after clearance.
+   out[41]={...out[41],o:100,c:100,h:101,l:99};
+   return out;
+  };
+
+  const runFullPipeline=(dir)=>{
+   const testBars=makeFullPipelineBars(dir);
+   const testPts=pivots(testBars);
+   const testStructure=structure(testBars,testPts);
+   const testGaps=[{i:17,dir}];
+
+   const testLiquidity=liquidityEvents(
+    testBars,testPts,testStructure,testGaps,"5m"
+   );
+
+   const testZones=detectOrderBlocks(
+    testBars,testGaps,testStructure
+   );
+
+   const signals=entrySignals({
+    bars:testBars,
+    pts:testPts,
+    st:testStructure,
+    gaps:testGaps,
+    liq:testLiquidity,
+    zones:testZones
+   });
+
+   return {testBars,testPts,testLiquidity,testZones,signals};
+  };
+
+  // Automatically discovered SSL must produce a BUY.
+  const fullBull=runFullPipeline("BULLISH");
+  const detectedSSL=fullBull.testLiquidity.events.find(
+   e=>e.type==="SSL"
+  );
+
+  if(!detectedSSL||detectedSSL.i!==40||detectedSSL.kind!=="sweep")
+   throw Error("Full pipeline SSL discovery or clearance failed");
+
+  if(!fullBull.signals.some(
+   s=>s.side==="BUY"&&s.entryIndex===41
+  ))
+   throw Error("Full pipeline bullish BUY signal failed");
+
+  // Automatically discovered BSL must produce a SELL.
+  const fullBear=runFullPipeline("BEARISH");
+  const detectedBSL=fullBear.testLiquidity.events.find(
+   e=>e.type==="BSL"
+  );
+
+  if(!detectedBSL||detectedBSL.i!==40||detectedBSL.kind!=="sweep")
+   throw Error("Full pipeline BSL discovery or clearance failed");
+
+  if(!fullBear.signals.some(
+   s=>s.side==="SELL"&&s.entryIndex===41
+  ))
+   throw Error("Full pipeline bearish SELL signal failed");
+
  const eqBars=bars.map(x=>({...x}));eqBars[20]={...eqBars[20],h:110};eqBars[30]={...eqBars[30],h:110};
  const eqPts=[{type:"high",i:20,level:110,confirmed:22},{type:"high",i:30,level:110,confirmed:32}],fake={labels:[],events:[]};
  const eq=liquidityEvents(eqBars,eqPts,fake,[],"5m");if(!eq.levels.some(x=>x.equal&&x.count===2&&x.source==="EQH"))throw Error("EQH grouping failed");
