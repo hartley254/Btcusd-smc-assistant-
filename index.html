@@ -1149,15 +1149,16 @@ function scanLiveEntryTouches(price){
     // A completed candle has already triggered this OB.
     if(completedSignals.some(s=>s.ob.id===ob.id))continue;
 
-    // The price must cross into the OB from outside.
-    const wasInside=
-     previous>=ob.lo&&previous<=ob.hi;
+    // Detect entry into or a complete crossing through the OB.
+const wasInside=
+ previous>=ob.lo&&previous<=ob.hi;
 
-    const isInside=
-     price>=ob.lo&&price<=ob.hi;
+const crossedZone=
+ Math.max(previous,price)>=ob.lo&&
+ Math.min(previous,price)<=ob.hi;
 
-    if(wasInside||!isInside)continue;
-
+// Only the first crossing from outside can trigger.
+if(wasInside||!crossedZone)continue;
     const liveIndex=a.bars.length;
 
     emit(
